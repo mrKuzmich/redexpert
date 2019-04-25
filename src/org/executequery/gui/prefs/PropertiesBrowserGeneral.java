@@ -64,6 +64,21 @@ public class PropertiesBrowserGeneral extends AbstractPropertiesBasePanel {
                 bundledString("ConnectOnDouble-click"),
                 SystemProperties.getBooleanProperty("user", key)));
 
+        key = "browser.show.system.objects";
+        list.add(new UserPreference(
+                UserPreference.BOOLEAN_TYPE,
+                key,
+                bundledString("ShowSystemObjects"),
+                SystemProperties.getBooleanProperty("user", key)));
+
+        key = "browser.search.in.columns";
+        list.add(new UserPreference(
+                UserPreference.BOOLEAN_TYPE,
+                key,
+                bundledString("SearchInColumns"),
+                SystemProperties.getBooleanProperty("user", key)));
+
+
         UserPreference[] preferences =
                 list.toArray(new UserPreference[list.size()]);
         preferencesPanel = new SimplePreferencesPanel(preferences);

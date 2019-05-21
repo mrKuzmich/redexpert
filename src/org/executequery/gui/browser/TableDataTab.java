@@ -30,10 +30,7 @@ import org.executequery.databasemediators.QueryTypes;
 import org.executequery.databasemediators.spi.DefaultStatementExecutor;
 import org.executequery.databasemediators.spi.StatementExecutor;
 import org.executequery.databaseobjects.*;
-import org.executequery.event.ApplicationEvent;
-import org.executequery.event.DefaultUserPreferenceEvent;
-import org.executequery.event.UserPreferenceEvent;
-import org.executequery.event.UserPreferenceListener;
+import org.executequery.event.*;
 import org.executequery.gui.BaseDialog;
 import org.executequery.gui.ExecuteQueryDialog;
 import org.executequery.gui.editor.ResultSetTableContainer;
@@ -42,6 +39,7 @@ import org.executequery.gui.resultset.RecordDataItem;
 import org.executequery.gui.resultset.ResultSetColumnHeader;
 import org.executequery.gui.resultset.ResultSetTable;
 import org.executequery.gui.resultset.ResultSetTableModel;
+import org.executequery.localization.Bundles;
 import org.executequery.log.Log;
 import org.executequery.util.ThreadUtils;
 import org.underworldlabs.jdbc.DataSourceException;
@@ -392,6 +390,26 @@ public class TableDataTab extends JPanel
             tableModel.setNonEditableColumns(nonEditableCols);
 
             TableSorter sorter = new TableSorter(tableModel);
+            sorter.addSortingListener(new SortingListener() {
+                @Override
+                public void presorting(SortingEvent e) {
+                            tableModel.setFetchAll(true);
+                            tableModel.fetchMoreData();
+                            if (displayRowCount) {
+                                rowCountField.setText(String.valueOf(tableModel.getRowCount()));
+                            }
+                }
+
+                @Override
+                public void postsorting(SortingEvent e) {
+
+                }
+
+                @Override
+                public boolean canHandleEvent(ApplicationEvent event) {
+                    return false;
+                }
+            });
             table.setModel(sorter);
             sorter.setTableHeader(table.getTableHeader());
 
@@ -1001,7 +1019,7 @@ public class TableDataTab extends JPanel
         gbc.gridx = 0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
-        rowCountPanel.add(new JLabel("Data Row Count:"), gbc);
+        rowCountPanel.add(new JLabel(Bundles.getCommon("fetched")), gbc);
         gbc.gridx = 2;
         gbc.insets.bottom = 2;
         gbc.insets.left = 5;

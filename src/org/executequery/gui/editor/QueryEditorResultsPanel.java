@@ -803,6 +803,7 @@ public class QueryEditorResultsPanel extends SimpleCloseTabbedPane
     public void preExecute() {
 
         addTextOutputTab();
+        setSelectedIndex(indexOfTab(OUTPUT_TAB_TITLE));
     }
 
     /**

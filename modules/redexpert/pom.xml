@@ -21,7 +21,7 @@
 
         <dependency>
             <groupId>org.executequery</groupId>
-            <artifactId>fbplugin</artifactId>
+            <artifactId>fbplugin-impl</artifactId>
             <version>1.0</version>
         </dependency>
 

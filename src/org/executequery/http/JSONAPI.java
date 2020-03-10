@@ -36,10 +36,11 @@ public class JSONAPI {
 
         br.close();
 
-        if (text.length() == 0)
+        if (text.length() == 0) {
             text.append("{\n" +
                     "    \"version\": \"0.0.0.0\"\n" +
                     "}");
+        }
 
         return new JSONObject(text.toString());
     }

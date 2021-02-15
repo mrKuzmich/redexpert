@@ -49,6 +49,8 @@ import java.util.*;
 public class DefaultDatabaseHost extends AbstractNamedObject
         implements DatabaseHost {
 
+    private int countFinishedMetaTags;
+
     private int typeTree;
 
     /**
@@ -90,6 +92,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
     public DefaultDatabaseHost(DatabaseConnection databaseConnection, int typeTree) {
         this.databaseConnection = databaseConnection;
+        countFinishedMetaTags = 0;
         this.typeTree = typeTree;
     }
 
@@ -105,6 +108,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
     public boolean connect() throws DataSourceException {
 
         if (!isConnected()) {
+            countFinishedMetaTags = 0;
 
             boolean connected = connectionMediator().connect(getDatabaseConnection());
             try {
@@ -192,7 +196,17 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
     public Connection getTemporaryConnection() {
 
-        return ConnectionManager.getConnection(getDatabaseConnection());
+        return ConnectionManager.getTemporaryConnection(getDatabaseConnection());
+    }
+
+    @Override
+    public int countFinishedMetaTags() {
+        return countFinishedMetaTags;
+    }
+
+    @Override
+    public void incCountFinishedMetaTags() {
+        countFinishedMetaTags++;
     }
 
     /**
@@ -256,7 +270,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
             throw new DataSourceException(e);
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
             setMarkedForReload(false);
         }
     }
@@ -296,7 +310,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
             setMarkedForReload(false);
         }
     }
@@ -334,7 +348,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -407,7 +421,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -484,7 +498,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
             throw new DataSourceException(e);
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -575,7 +589,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -620,7 +634,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -680,7 +694,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, null);
         }
 
     }
@@ -782,7 +796,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                     columns.add(column);
                 }
             }
-            releaseResources(rs);
+            releaseResources(rs, connection);
 
             int columnCount = columns.size();
             if (columnCount > 0) {
@@ -807,7 +821,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                     }
 
                 }
-                releaseResources(rs);
+                releaseResources(rs, connection);
 
                 // check for foreign keys
                 rs = dmd.getImportedKeys(_catalog, _schema, table);
@@ -844,7 +858,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
 
         } finally {
 
-            releaseResources(rs);
+            releaseResources(rs, connection);
         }
 
     }
@@ -937,8 +951,8 @@ public class DefaultDatabaseHost extends AbstractNamedObject
             }
             if (column_def != null) {
                 // TODO This looks suspicious (what if it contains default)
-                int defaultPos = column_def.toUpperCase().indexOf("DEFAULT");
-                if (defaultPos >= 0)
+                int defaultPos = column_def.toUpperCase().trim().indexOf("DEFAULT");
+                if (defaultPos == 0)
                     column_def = column_def.substring(7).trim();
                 column.setDefaultValue(column_def);
             }
@@ -948,7 +962,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
             columns.add(column);
         }
 
-        releaseResources(rs);
+        releaseResources(rs, connection);
 
         Statement statement = null;
 
@@ -972,7 +986,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                     computedSource = sourceRS.getString(1);
                 }
 
-                releaseResources(sourceRS);
+                releaseResources(sourceRS, connection);
 
                 if (computedSource != null && !computedSource.isEmpty()) {
                     column.setDomain(computedSource);
@@ -999,7 +1013,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                     if (sourceRS.next()) {
                         computedSource = sourceRS.getString(1);
                     }
-                    releaseResources(sourceRS);
+                releaseResources(sourceRS, connection);
                     if (computedSource != null && !computedSource.isEmpty()) {
 //                            column.setTypeName(computedSource);
                         column.setGenerated(true);
@@ -1028,7 +1042,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                     if (sourceRS.next()) {
                         column.setColumnSubtype(sourceRS.getInt(1));
                         column.setColumnSize(sourceRS.getInt(2));
-                        releaseResources(sourceRS);
+                        releaseResources(sourceRS, connection);
                     }
 
                 } finally {
@@ -1252,7 +1266,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
         } catch (SQLException e) {
             throw new DataSourceException(e);
         } finally {
-            releaseResources(rs);
+            releaseResources(rs, connection);
         }
 
     }
@@ -1423,7 +1437,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
         } catch (SQLException e) {
             throw new DataSourceException(e);
         } finally {
-            releaseResources(rs);
+            releaseResources(rs, connection);
             setMarkedForReload(false);
         }
 
@@ -1443,12 +1457,13 @@ public class DefaultDatabaseHost extends AbstractNamedObject
             DatabaseConnection databaseConnection = metaTag.getHost().getDatabaseConnection();
             if (supportedObject(i))
                 metaObjects.add(metaTag);
-            metaObjects.sort(new Comparator<DatabaseMetaTag>() {
-                @Override
-                public int compare(DatabaseMetaTag o1, DatabaseMetaTag o2) {
-                    return o1.getName().compareTo(o2.getName());
-                }
-            });
+            if (SystemProperties.getBooleanProperty("user", "treeconnection.alphabet.sorting"))
+                metaObjects.sort(new Comparator<DatabaseMetaTag>() {
+                    @Override
+                    public int compare(DatabaseMetaTag o1, DatabaseMetaTag o2) {
+                        return o1.getName().compareTo(o2.getName());
+                    }
+                });
 
         }
     }
@@ -1480,6 +1495,7 @@ public class DefaultDatabaseHost extends AbstractNamedObject
                         case NamedObject.SYSTEM_NUMERIC_FUNCTIONS:
                         case NamedObject.SYSTEM_STRING_FUNCTIONS:
                         case NamedObject.SYSTEM_FUNCTION:
+                        case NamedObject.DDL_TRIGGER:
                             return false;
                     }
                 case 3:

@@ -22,10 +22,10 @@ import org.executequery.gui.text.TextEditor;
 import org.executequery.gui.text.TextEditorContainer;
 import org.executequery.log.Log;
 import org.underworldlabs.jdbc.DataSourceException;
+import org.underworldlabs.procedureParser.ProcedureParserBaseListener;
+import org.underworldlabs.procedureParser.ProcedureParserLexer;
+import org.underworldlabs.procedureParser.ProcedureParserParser;
 import org.underworldlabs.swing.GUIUtils;
-import org.underworldlabs.traceparser.ProcedureParserBaseListener;
-import org.underworldlabs.traceparser.ProcedureParserLexer;
-import org.underworldlabs.traceparser.ProcedureParserParser;
 import org.underworldlabs.util.MiscUtils;
 
 import javax.swing.*;
@@ -215,6 +215,17 @@ public abstract class CreateProcedureFunctionPanel extends AbstractCreateObjectP
                             if (var.notnull() != null && !var.notnull().isEmpty()) {
                                 variable.setNullable(0);
                             } else variable.setNullable(1);
+                            if (var.default_value() != null)
+                                variable.setDefaultValue(var.default_value().getText());
+                            if (var.comment() != null) {
+                                String description = var.comment().getText();
+                                if (description.startsWith("--")) {
+                                    description = description.substring(2);
+                                    variable.setDescriptionAsSingleComment(true);
+                                } else if (description.startsWith("/*"))
+                                    description = description.substring(2, description.length() - 2);
+                                variable.setDescription(description);
+                            }
                             variablesPanel.addRow(variable);
                         }
                     }
@@ -364,7 +375,7 @@ public abstract class CreateProcedureFunctionPanel extends AbstractCreateObjectP
                 if (cd.isTypeOf())
                     sb.append(cd.getFormattedDataType());
                 else
-                    sb.append(cd.getDomainInQuotes());
+                    sb.append(cd.getFormattedDomain());
             }
             sb.append(cd.isRequired() ? " NOT NULL" : CreateTableSQLSyntax.EMPTY);
             if (cd.getTypeParameter() != ColumnData.OUTPUT_PARAMETER && !MiscUtils.isNull(cd.getDefaultValue())) {
@@ -413,7 +424,7 @@ public abstract class CreateProcedureFunctionPanel extends AbstractCreateObjectP
             ColumnData cd = tableVector.elementAt(i);
             if (!MiscUtils.isNull(cd.getColumnName())) {
                 if (variable)
-                    sqlText.append("DECLARE VARIABLE ");
+                    sqlText.append("DECLARE ");
                 sqlText.append(formattedParameter(cd));
                 if (variable) {
                     sqlText.append(";");

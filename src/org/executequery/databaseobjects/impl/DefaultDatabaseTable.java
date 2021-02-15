@@ -24,18 +24,20 @@ import org.apache.commons.lang.StringUtils;
 import org.executequery.databasemediators.QueryTypes;
 import org.executequery.databasemediators.spi.DefaultStatementExecutor;
 import org.executequery.databaseobjects.*;
+import org.executequery.gui.browser.ColumnData;
 import org.executequery.gui.browser.tree.TreePanel;
 import org.executequery.gui.resultset.RecordDataItem;
 import org.executequery.log.Log;
 import org.executequery.sql.SQLFormatter;
 import org.executequery.sql.SqlStatementResult;
-import org.executequery.sql.StatementGenerator;
 import org.underworldlabs.jdbc.DataSourceException;
 import org.underworldlabs.util.MiscUtils;
+import org.underworldlabs.util.SQLUtils;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -73,23 +75,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
   private DatabaseObject dependObject;
 
-  public DefaultDatabaseTable(DatabaseObject object) {
-
-    this(object.getHost());
-
-    setCatalogName(object.getCatalogName());
-    setSchemaName(object.getSchemaName());
-    setName(object.getName());
-    setRemarks(object.getRemarks());
-    if (object instanceof DefaultDatabaseObject) {
-      DefaultDatabaseObject ddo = ((DefaultDatabaseObject) object);
-      setTypeTree(ddo.getTypeTree());
-      setDependObject(ddo.getDependObject());
-    } else {
-      typeTree = TreePanel.DEFAULT;
-      setDependObject(null);
-    }
-  }
+  private String externalFile;
 
     public DefaultDatabaseTable(DatabaseObject object, String metaDataKey) {
 
@@ -244,6 +230,8 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
                   getName());
         if (typeTree == TreePanel.DEPENDED_ON)
           _columns = getDependedColumns();
+        if (typeTree == TreePanel.DEPENDENT)
+          _columns = getDependentColumns();
         if (_columns != null) {
 
           columns = databaseColumnListWithSize(_columns.size());
@@ -275,7 +263,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
               }
             }
           }
-          releaseResources(rs);
+          releaseResources(rs, null);
 
           try {
 
@@ -285,6 +273,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
             // surround with try/catch hack to get at least a columns list
 
             rs = dmd.getImportedKeys(_catalog, _schema, getName());
+
             while (rs.next()) {
 
               String fkColumn = rs.getString(8);
@@ -292,19 +281,38 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
               for (DatabaseColumn i : columns) {
 
                 if (i.getName().equalsIgnoreCase(fkColumn)) {
-
+                  DefaultStatementExecutor querySender = new DefaultStatementExecutor(getHost().getDatabaseConnection());
                   DatabaseTableColumn column = (DatabaseTableColumn) i;
-
+                  List<String> row = new ArrayList<>();
+                  for (int g = 1; g <= rs.getMetaData().getColumnCount(); g++)
+                    row.add(rs.getString(g));
                   TableColumnConstraint constraint = new TableColumnConstraint(column, ColumnConstraint.FOREIGN_KEY);
                   constraint.setReferencedCatalog(rs.getString(1));
                   constraint.setReferencedSchema(rs.getString(2));
                   constraint.setReferencedTable(rs.getString(3));
                   constraint.setReferencedColumn(rs.getString(4));
-                  constraint.setUpdateRule(rs.getShort(10));
-                  constraint.setDeleteRule(rs.getShort(11));
                   constraint.setName(rs.getString(12));
                   constraint.setDeferrability(rs.getShort(14));
                   constraint.setMetaData(resultSetRowToMap(rs));
+                  ResultSet rulesRS = querySender.getResultSet("select RDB$REF_CONSTRAINTS.RDB$UPDATE_RULE, RDB$REF_CONSTRAINTS.RDB$DELETE_RULE" +
+                          " from rdb$ref_constraints where RDB$REF_CONSTRAINTS.RDB$CONSTRAINT_NAME='" + constraint.getName() + "'").getResultSet();
+                  try {
+                    if (rulesRS.next()) {
+                      for (int g = 1; g <= 2; g++) {
+                        String rule = rulesRS.getString(g);
+                        if (rule != null) {
+                          if (g == 1)
+                            constraint.setUpdateRule(rule.trim());
+                          else
+                            constraint.setDeleteRule(rule.trim());
+                        }
+                      }
+                    }
+                  } catch (Exception e) {
+                    e.printStackTrace();
+                  } finally {
+                    querySender.releaseResources();
+                  }
                   column.addConstraint(constraint);
                   break;
 
@@ -335,7 +343,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
       } finally {
 
-        releaseResources(rs);
+        releaseResources(rs, null);
         setMarkedForReload(false);
       }
 
@@ -390,20 +398,28 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
         DefaultStatementExecutor executor = new DefaultStatementExecutor(getHost().getDatabaseConnection(), true);
         SqlStatementResult result = null;
         try {
-          String query = "SELECT DISTINCT C.RDB$CONSTRAINT_NAME,\n" +
-              "T.RDB$TRIGGER_SOURCE FROM\n" +
-              "RDB$CHECK_CONSTRAINTS AS C LEFT JOIN RDB$TRIGGERS AS T\n" +
-              "ON C.RDB$TRIGGER_NAME = T.RDB$TRIGGER_NAME\n" +
-              "where T.RDB$RELATION_NAME='" + getName() + "'";
-          result = executor.execute(QueryTypes.SELECT, query);
+          String query = "select A.RDB$CONSTRAINT_NAME,\n" +
+                  "A.RDB$CONSTRAINT_TYPE,\n" +
+                  "A.RDB$RELATION_NAME,\n" +
+                  "C.RDB$TRIGGER_SOURCE\n" +
+                  "from RDB$RELATION_CONSTRAINTS A, RDB$CHECK_CONSTRAINTS B, RDB$TRIGGERS C\n" +
+                  "where (A.RDB$CONSTRAINT_TYPE = 'CHECK') and\n" +
+                  "(A.RDB$CONSTRAINT_NAME = B.RDB$CONSTRAINT_NAME) and\n" +
+                  "(B.RDB$TRIGGER_NAME = C.RDB$TRIGGER_NAME) and\n" +
+                  "(C.RDB$TRIGGER_TYPE = 1)\n" +
+                  "and (A.RDB$RELATION_NAME = ?)";
+          PreparedStatement st = executor.getPreparedStatement(query);
+          st.setString(1, getName());
+          result = executor.execute(QueryTypes.SELECT, st);
           ResultSet rs = result.getResultSet();
           List<String> names = new ArrayList<>();
           if (rs != null) {
             while (rs.next()) {
               String name = rs.getString(1).trim();
               if (!names.contains(name)) {
-                ColumnConstraint constraint = new TableColumnConstraint(rs.getString(2));
+                ColumnConstraint constraint = new TableColumnConstraint(rs.getString(4));
                 constraint.setName(name);
+                constraint.setTable(this);
                 constraints.add(constraint);
                 names.add(name);
               }
@@ -419,8 +435,10 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
           String query = "SELECT C.RDB$CONSTRAINT_NAME,I.RDB$FIELD_NAME\n" +
                   "FROM RDB$RELATION_CONSTRAINTS AS C LEFT JOIN RDB$INDEX_SEGMENTS AS I\n" +
                   "ON C.RDB$INDEX_NAME=I.RDB$INDEX_NAME\n" +
-                  "where C.RDB$RELATION_NAME='" + getName() + "' AND C.RDB$CONSTRAINT_TYPE = 'UNIQUE'";
-          ResultSet rs = executor.getResultSet(query).getResultSet();
+                  "where C.RDB$RELATION_NAME=? AND C.RDB$CONSTRAINT_TYPE = 'UNIQUE'";
+          PreparedStatement st = executor.getPreparedStatement(query);
+          st.setString(1, getName());
+          ResultSet rs = executor.getResultSet(-1, st).getResultSet();
           if (rs != null) {
             while (rs.next()) {
               String name = rs.getString(1).trim();
@@ -440,7 +458,12 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
           executor.releaseResources();
         }
         constraints.removeAll(Collections.singleton(null));
-
+        constraints.sort(new Comparator<ColumnConstraint>() {
+          @Override
+          public int compare(ColumnConstraint o1, ColumnConstraint o2) {
+            return o1.getName().compareTo(o2.getName());
+          }
+        });
         return constraints;
 
       } else {
@@ -487,7 +510,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
           lastIndex.addIndexedColumn(rs.getString(9));
         }
       }
-      releaseResources(rs);
+      releaseResources(rs, null);
       DefaultDatabaseMetaTag metaTag = new DefaultDatabaseMetaTag(getHost(),null,null,META_TYPES[INDEX]);
       for (TableColumnIndex index : tindexes)
       {
@@ -522,7 +545,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
     } finally {
 
-      releaseResources(rs);
+      releaseResources(rs, null);
       setMarkedForReload(false);
     }
   }
@@ -663,7 +686,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
       }
 
       int result = 0;
-      String[] queries = changes.split(StatementGenerator.END_DELIMITER);
+      String[] queries = changes.split(";");
 
       Connection connection = getHost().getConnection();
       stmnt = connection.createStatement();
@@ -701,6 +724,73 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
   public boolean hasTableDefinitionChanges() {
 
     return StringUtils.isNotBlank(getModifiedSQLText());
+  }
+
+  private String adapter;
+
+  public DefaultDatabaseTable(DatabaseObject object) {
+
+    this(object.getHost());
+
+    setCatalogName(object.getCatalogName());
+    setSchemaName(object.getSchemaName());
+    setName(object.getName());
+    setRemarks(object.getRemarks());
+    if (object instanceof DefaultDatabaseObject) {
+      DefaultDatabaseObject ddo = ((DefaultDatabaseObject) object);
+      setTypeTree(ddo.getTypeTree());
+      setDependObject(ddo.getDependObject());
+    } else {
+      typeTree = TreePanel.DEFAULT;
+      setDependObject(null);
+    }
+  }
+
+  private boolean loadedInfoAboutExternalFile = false;
+
+  private void loadInfoAboutExternalFile() {
+    DefaultStatementExecutor querySender = new DefaultStatementExecutor(getHost().getDatabaseConnection());
+    try {
+      //querySender.setDatabaseConnection(getHost().getDatabaseConnection());
+      String adapter = ", RDB$ADAPTER";
+      if (!getHost().getDatabaseProductName().toLowerCase().contains("reddatabase"))
+        adapter = "";
+      PreparedStatement statement = querySender.getPreparedStatement("select rdb$external_file" + adapter + " from rdb$relations where rdb$relation_name = ?");
+      statement.setString(1, getName());
+      ResultSet rs = querySender.getResultSet(-1, statement).getResultSet();
+      if (rs.next()) {
+        setExternalFile(rs.getString(1));
+        if (!adapter.isEmpty())
+          setAdapter(rs.getString(2));
+      }
+    } catch (SQLException throwables) {
+      throwables.printStackTrace();
+    } finally {
+      querySender.releaseResources();
+      loadedInfoAboutExternalFile = true;
+    }
+  }
+
+  @Override
+  public String getExternalFile() {
+    if (!loadedInfoAboutExternalFile)
+      loadInfoAboutExternalFile();
+    return externalFile;
+  }
+
+  public void setExternalFile(String externalFile) {
+    this.externalFile = externalFile;
+  }
+
+  @Override
+  public String getAdapter() {
+    if (!loadedInfoAboutExternalFile)
+      loadInfoAboutExternalFile();
+    return adapter;
+  }
+
+  public void setAdapter(String adapter) {
+    this.adapter = adapter;
   }
 
   /**
@@ -754,29 +844,40 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
   public String getAlteredSQLText() throws DataSourceException {
 
     StringBuilder sb = new StringBuilder();
-
-    // retrieve column alter changes
     List<DatabaseColumn> _columns = getColumns();
-    if (_columns != null) {
-
-      StatementGenerator statementGenerator = createStatementGenerator();
-      String columnsAlter = statementGenerator.alterTable(databaseProductName(), this);
-      sb.append(columnsAlter);
-    }
-
-    // retrieve constraint changes
-        /*
-        List<ColumnConstraint> constraints = getConstraints();
-        if (constraints != null) {
-            for (ColumnConstraint i : constraints) {
-                if (i.isNewConstraint() || i.isAltered()) {
-                    sb.append(i.getAlteredSQLText());
-                    sb.append("\n");
-                }
-            }
+    List<ColumnConstraint> _constraints = getConstraints();
+    boolean first=true;
+    sb.append("ALTER TABLE ").append(MiscUtils.getFormattedObject(getName()));
+    if (_constraints != null) {
+      for(int i=0;i<_constraints.size();i++) {
+        if(_constraints.get(i) instanceof TableColumnConstraint)
+        {
+          TableColumnConstraint dtc=(TableColumnConstraint) _constraints.get(i);
+          if(dtc.isMarkedDeleted()) {
+            if(!first)
+              sb.append(",");
+            first=false;
+            sb.append("\nDROP CONSTRAINT ").append(MiscUtils.getFormattedObject(dtc.getName()));
+          }
         }
-        */
-
+      }
+    }
+    if (_columns != null) {
+      for(int i=0;i<_columns.size();i++) {
+        if(_columns.get(i) instanceof DatabaseTableColumn)
+        {
+          DatabaseTableColumn dtc=(DatabaseTableColumn)_columns.get(i);
+          if(dtc.isMarkedDeleted()) {
+            if(!first)
+              sb.append(",");
+            first=false;
+            sb.append("\nDROP ").append(dtc.getNameEscaped());
+          }
+        }
+      }
+    }
+    if(first)
+      return "";
     return sb.toString();
   }
 
@@ -787,7 +888,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
   public String getDropSQLText(boolean cascadeConstraints) {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
+    /*StatementGenerator statementGenerator = null;
     String databaseProductName = databaseProductName();
 
     String dropStatement = null;
@@ -800,7 +901,9 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
       dropStatement = statementGenerator.dropTable(databaseProductName, this);
     }
 
-    return dropStatement;
+    return dropStatement;*/
+  return  null;
+
   }
 
   public boolean hasForeignKey() {
@@ -869,31 +972,36 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
   public String getAlterSQLTextForUniqueKeys() {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
+    /*StatementGenerator statementGenerator = null;
 
-    return statementGenerator.createUniqueKeyChange(databaseProductName(), this);
+    return statementGenerator.createUniqueKeyChange(databaseProductName(), this);*/
+    return null;
   }
 
   public String getAlterSQLTextForForeignKeys() {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
-    return statementGenerator.createForeignKeyChange(databaseProductName(), this);
+    /*StatementGenerator statementGenerator = null;
+    return statementGenerator.createForeignKeyChange(databaseProductName(), this);*/
+    return null;
   }
 
   public String getAlterSQLTextForPrimaryKeys() {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
+    /*StatementGenerator statementGenerator = null;
 
     return statementGenerator.createPrimaryKeyChange(databaseProductName(), this);
+     */
+    return  null;
   }
 
   public String getCreateConstraintsSQLText() throws DataSourceException {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
+    /*StatementGenerator statementGenerator = null;
 
     String databaseProductName = databaseProductName();
 
-    return statementGenerator.tableConstraintsAsAlter(databaseProductName, this);
+    return statementGenerator.tableConstraintsAsAlter(databaseProductName, this);*/
+    return null;
   }
 
   /**
@@ -903,36 +1011,25 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
    */
   public String getCreateSQLText(int style) throws DataSourceException {
 
-    StatementGenerator statementGenerator = createStatementGenerator();
-    String databaseProductName = databaseProductName();
-
-    if (style == STYLE_CONSTRAINTS_DEFAULT) {
-
-      String createStatement =
-          statementGenerator.createTableWithConstraints(databaseProductName, this);
-
-      return formatSqlText(createStatement);
-
-    } else if (style == STYLE_CONSTRAINTS_ALTER) {
-
-      String createStatement = statementGenerator.createTable(databaseProductName, this);
-
-      StringBuilder sb = new StringBuilder();
-
-      sb.append(formatSqlText(createStatement));
-      sb.append("\n\n");
-      sb.append(statementGenerator.tableConstraintsAsAlter(databaseProductName, this));
-
-      return sb.toString();
-
-    } else {
-
-      String createStatement = statementGenerator.createTable(databaseProductName, this);
-
-      return formatSqlText(createStatement);
-    }
+    return formatSqlText(generateCreateTableSQLText().replaceAll("\\^",";"));
 
   }
+
+  private String generateCreateTableSQLText() {
+    List<ColumnData> listCD=new ArrayList<>();
+    for(int i=0;i<getColumnCount();i++)
+    {
+      listCD.add(new ColumnData(getHost().getDatabaseConnection(),getColumns().get(i)));
+    }
+    List<org.executequery.gui.browser.ColumnConstraint> listCC=new ArrayList<>();
+    for(int i=0;i<getConstraints().size();i++)
+    {
+      listCC.add(new org.executequery.gui.browser.ColumnConstraint(false,getConstraints().get(i)));
+    }
+
+    return SQLUtils.generateCreateTable(getName(), listCD, listCC, true, false, null, getExternalFile(), getAdapter());
+
+    }
 
   private String formatSqlText(String text) {
 
@@ -1224,7 +1321,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
     StringBuilder sb = new StringBuilder();
     sb.append("UPDATE ").append(getNameWithPrefixForQuery()).append(" SET ");
     for (String column : columns) {
-      sb.append(MiscUtils.wordInQuotes(column)).append(" = ?,");
+      sb.append(MiscUtils.getFormattedObject(column)).append(" = ?,");
     }
 
     sb.deleteCharAt(sb.length() - 1);
@@ -1234,7 +1331,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
     List<DatabaseColumn> cols = getColumns();
     for (int i = 0; i < cols.size(); i++) {
       DatabaseColumn column = cols.get(i);
-      String col = MiscUtils.wordInQuotes(cols.get(i).getName());
+      String col = MiscUtils.getFormattedObject(cols.get(i).getName());
       RecordDataItem rdi = changes.get(i);
       if (column.isGenerated())
         rdi.setGenerated(true);
@@ -1266,7 +1363,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
     List<DatabaseColumn> cols = getColumns();
     for (int i = 0; i < cols.size(); i++) {
       DatabaseColumn column = cols.get(i);
-      String col = MiscUtils.wordInQuotes(cols.get(i).getName());
+      String col = MiscUtils.getFormattedObject(cols.get(i).getName());
       RecordDataItem rdi = changes.get(i);
       if (column.isGenerated())
         rdi.setGenerated(true);
@@ -1299,7 +1396,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
     List<DatabaseColumn> cols = getColumns();
     for (int i = 0; i < cols.size(); i++) {
       DatabaseColumn column = cols.get(i);
-      String col = MiscUtils.wordInQuotes(cols.get(i).getName());
+      String col = MiscUtils.getFormattedObject(cols.get(i).getName());
       RecordDataItem rdi = changes.get(i);
       if (column.isGenerated())
         rdi.setGenerated(true);
@@ -1326,7 +1423,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
     StringBuilder sb = new StringBuilder();
     sb.append("UPDATE ").append(getNameWithPrefixForQuery()).append(" SET ");
     for (String column : columns) {
-      sb.append(MiscUtils.wordInQuotes(column)).append(" = ?,");
+      sb.append(MiscUtils.getFormattedObject(column)).append(" = ?,");
     }
     sb.deleteCharAt(sb.length() - 1);
     sb.append(" WHERE ");
@@ -1335,7 +1432,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
       if (applied) {
         sb.append(" AND ");
       }
-      sb.append(MiscUtils.wordInQuotes(primaryKey)).append(" = ? ");
+      sb.append(MiscUtils.getFormattedObject(primaryKey)).append(" = ? ");
       applied = true;
     }
     sb.deleteCharAt(sb.length() - 1);
@@ -1356,7 +1453,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
         sb.append(" AND ");
       }
-      sb.append(MiscUtils.wordInQuotes(primaryKey)).append(" = ? ");
+      sb.append(MiscUtils.getFormattedObject(primaryKey)).append(" = ? ");
       applied = true;
     }
 
@@ -1455,7 +1552,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
         columns.add(column);
       }
-      releaseResources(rs);
+      releaseResources(rs, connection);
 
       int columnCount = columns.size();
       if (columnCount > 0) {
@@ -1480,7 +1577,7 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
           }
 
         }
-        releaseResources(rs);
+        releaseResources(rs, connection);
 
         // check for foreign keys
         rs = dmd.getImportedKeys(null, null, getName());
@@ -1517,7 +1614,131 @@ public class DefaultDatabaseTable extends AbstractTableObject implements Databas
 
     } finally {
 
-      releaseResources(rs);
+      try {
+        releaseResources(rs, getHost().getDatabaseMetaData().getConnection());
+      } catch (SQLException throwables) {
+        releaseResources(rs, null);
+      }
+    }
+  }
+
+  private List<DatabaseColumn> getDependentColumns() {
+    ResultSet rs = null;
+
+    List<DatabaseColumn> columns = new ArrayList<DatabaseColumn>();
+
+    try {
+      DatabaseMetaData dmd = getHost().getDatabaseMetaData();
+      String packageField = "";
+      if (dmd.getDatabaseMajorVersion() > 2) {
+        packageField = "and (T1.RDB$PACKAGE_NAME IS NULL)\n";
+      }
+      Connection connection = dmd.getConnection();
+      Statement statement = null;
+      String firebirdSql = "select " +
+              "E.RDB$FIELD_NAME as OnField\n" +
+              "from RDB$REF_CONSTRAINTS B, RDB$RELATION_CONSTRAINTS A, RDB$RELATION_CONSTRAINTS C,\n" +
+              "RDB$INDEX_SEGMENTS D, RDB$INDEX_SEGMENTS E\n" +
+              "where (A.RDB$CONSTRAINT_TYPE = 'FOREIGN KEY') and\n" +
+              "(A.RDB$CONSTRAINT_NAME = B.RDB$CONSTRAINT_NAME) and\n" +
+              "(B.RDB$CONST_NAME_UQ=C.RDB$CONSTRAINT_NAME) and (C.RDB$INDEX_NAME=D.RDB$INDEX_NAME) and\n" +
+              "(A.RDB$INDEX_NAME=E.RDB$INDEX_NAME)\n" +
+              "and (C.RDB$RELATION_NAME = '" + dependObject.getName() + "')\n" +
+              "and (A.RDB$RELATION_NAME = '" + getName() + "')\n" +
+              "union all\n" +
+              "select cast(t1.RDB$FIELD_NAME as varchar(64))\n" +
+              "from RDB$DEPENDENCIES t1 where (t1.RDB$DEPENDENT_NAME = '" + dependObject.getName() + "')\n" +
+              "and (t1.RDB$DEPENDENT_TYPE = 0)\n" +
+              packageField +
+              "and t1.RDB$DEPENDED_ON_NAME = '" + getName() + "'\n" +
+              "union all\n" +
+              "select distinct cast(d.rdb$field_name as varchar(64))\n" +
+              "from rdb$dependencies d, rdb$relation_fields f\n" +
+              "where (d.rdb$dependent_type = 3) and\n" +
+              "(d.rdb$dependent_name = f.rdb$field_source)\n" +
+              "and (f.rdb$relation_name = '" + dependObject.getName() + "')\n" +
+              "and  d.rdb$depended_on_name = '" + getName() + "'\n" +
+              "order by 1";
+
+      statement = connection.createStatement();
+      rs = statement.executeQuery(firebirdSql);
+
+
+      while (rs.next()) {
+
+        DefaultDatabaseColumn column = new DefaultDatabaseColumn();
+
+        column.setName(rs.getString(1));
+
+        columns.add(column);
+      }
+      releaseResources(rs, connection);
+
+      int columnCount = columns.size();
+      if (columnCount > 0) {
+
+        // check for primary keys
+        rs = dmd.getPrimaryKeys(null, null, getName());
+        while (rs.next()) {
+
+          String pkColumn = rs.getString(4);
+
+          // find the pk column in the previous list
+          for (int i = 0; i < columnCount; i++) {
+
+            DatabaseColumn column = columns.get(i);
+            String columnName = column.getName();
+
+            if (columnName.equalsIgnoreCase(pkColumn)) {
+              ((DefaultDatabaseColumn) column).setPrimaryKey(true);
+              break;
+            }
+
+          }
+
+        }
+        releaseResources(rs, connection);
+
+        // check for foreign keys
+        rs = dmd.getImportedKeys(null, null, getName());
+        while (rs.next()) {
+          String fkColumn = rs.getString(8);
+
+          // find the fk column in the previous list
+          for (int i = 0; i < columnCount; i++) {
+            DatabaseColumn column = columns.get(i);
+            String columnName = column.getName();
+            if (columnName.equalsIgnoreCase(fkColumn)) {
+              ((DefaultDatabaseColumn) column).setForeignKey(true);
+              break;
+            }
+          }
+
+        }
+
+      }
+
+      return columns;
+
+    } catch (SQLException e) {
+
+      if (Log.isDebugEnabled()) {
+
+        Log.error("Error retrieving column data for table " + getName()
+                + " using connection " + getHost().getDatabaseConnection(), e);
+      }
+
+      return columns;
+
+//            throw new DataSourceException(e);
+
+    } finally {
+
+      try {
+        releaseResources(rs, getHost().getDatabaseMetaData().getConnection());
+      } catch (SQLException throwables) {
+        releaseResources(rs, null);
+      }
     }
   }
 

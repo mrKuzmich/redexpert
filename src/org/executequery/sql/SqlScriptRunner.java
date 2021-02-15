@@ -27,7 +27,7 @@ import org.executequery.databasemediators.DatabaseDriver;
 import org.executequery.databasemediators.QueryTypes;
 import org.executequery.databasemediators.spi.DefaultDatabaseConnection;
 import org.executequery.databasemediators.spi.DefaultDatabaseDriver;
-import org.executequery.datasource.ConnectionManager;
+import org.executequery.databasemediators.spi.DefaultStatementExecutor;
 import org.executequery.datasource.SimpleDataSource;
 import org.executequery.log.Log;
 import org.underworldlabs.util.MiscUtils;
@@ -38,8 +38,8 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.sql.Connection;
 import java.sql.Driver;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -49,6 +49,8 @@ import java.util.regex.Pattern;
 public class SqlScriptRunner {
 
     private Connection connection;
+
+    DefaultStatementExecutor querySender;
 
     private final ExecutionController executionController;
 
@@ -75,9 +77,10 @@ public class SqlScriptRunner {
         int count = 0;
         int result = 0;
 
-        Statement statement = null;
+        PreparedStatement statement = null;
         SqlStatementResult sqlStatementResult = new SqlStatementResult();
         needCloseDatabase = false;
+        querySender = new DefaultStatementExecutor();
 
         try {
 
@@ -89,8 +92,7 @@ public class SqlScriptRunner {
 
             close();
             if (databaseConnection != null) {
-                connection = ConnectionManager.getConnection(databaseConnection);
-                connection.setAutoCommit(false);
+                querySender.setDatabaseConnection(databaseConnection);
             }
 
             List<DerivedQuery> executableQueries = new ArrayList<DerivedQuery>();
@@ -101,12 +103,12 @@ public class SqlScriptRunner {
 
 
 
-            executionController.message("Found " + executableQueries.size() + " executable queries");
+            //executionController.message("Found " + executableQueries.size() + " executable queries");
             executionController.message("Executing...");
 
-            if (connection == null)
+            /*if (connection == null)
                 throw new SQLException("There is no connection. Select a connection from the available connections " +
-                        "list or add a database creation statement.");
+                        "list or add a database creation statement.");*/
 
             long start = 0L;
             long end = 0L;
@@ -135,6 +137,8 @@ public class SqlScriptRunner {
                     localDataSource = createDatabase(createDBQuery, sqlDialect);
                     connection = localDataSource.getConnection();
                     connection.setAutoCommit(false);
+                    querySender.setUseDatabaseConnection(false);
+                    querySender.setConn(connection);
                     createDBQuery = null;
                     needCloseDatabase = true;
                     continue;
@@ -158,36 +162,13 @@ public class SqlScriptRunner {
                         executionController.queryMessage(query.getDerivedQuery());
                     }
 
-                    if (StringUtils.equalsIgnoreCase(derivedQuery, "commit")) {
-                        connection.commit();
-                        continue;
-                    }
-
-                    Pattern pat = Pattern.compile("commit\\s+work", Pattern.CASE_INSENSITIVE);
-                    Matcher m = pat.matcher(derivedQuery);
-                    if ( m.find() ) {
-                        connection.commit();
-                        continue;
-                    }
-
-                    pat = Pattern.compile("set\\s+autoddl\\s+off", Pattern.CASE_INSENSITIVE);
-                    m = pat.matcher(derivedQuery);
-                    if ( m.find() ) {
-//                        connection.setAutoCommit(false);
-                        continue;
-                    }
-
-                    pat = Pattern.compile("set\\s+autoddl\\s+on", Pattern.CASE_INSENSITIVE);
-                    m = pat.matcher(derivedQuery);
-                    if ( m.find() ) {
-//                        connection.setAutoCommit(true);
-                        continue;
-                    }
-
-                    statement = connection.createStatement();
+                    statement = querySender.getPreparedStatement(derivedQuery);
                     start = System.currentTimeMillis();
-                    thisResult = statement.executeUpdate(derivedQuery);
-                    result += thisResult;
+                    sqlStatementResult = querySender.execute(query.getQueryType(), statement);
+                    if (sqlStatementResult.isException())
+                        if (sqlStatementResult.getSqlException() != null)
+                            throw sqlStatementResult.getSqlException();
+                    result += sqlStatementResult.getUpdateCount();
 
                 } catch (SQLException e) {
 
@@ -286,6 +267,13 @@ public class SqlScriptRunner {
                 database = database.substring(separatorIdx + 1);
             }
         }
+        separatorIdx = database.indexOf(":");
+        if (separatorIdx != -1 && separatorIdx > 2) {
+            if (database.charAt(separatorIdx + 1) != '\\') {
+                port = database.substring(0, separatorIdx);
+                database = database.substring(separatorIdx + 1);
+            }
+        }
 
         derivedQuery = derivedQuery.substring(derivedQuery.lastIndexOf(database) + database.length()).trim();
         idx = StringUtils.indexOfIgnoreCase(derivedQuery, "USER");
@@ -327,7 +315,7 @@ public class SqlScriptRunner {
         Class clazzdb = null;
         Object odb = null;
         try {
-            urlDriver = MiscUtils.loadURLs("./lib/jaybird-full.jar;../lib/jaybird-full.jar");
+            urlDriver = MiscUtils.loadURLs("./lib/jaybird-3.jar"); // TODO Must use DriverLoader
             ClassLoader clD = new URLClassLoader(urlDriver);
             clazzDriver = clD.loadClass("org.firebirdsql.jdbc.FBDriver");
             Object o = clazzDriver.newInstance();
@@ -336,7 +324,7 @@ public class SqlScriptRunner {
             Log.info("Database creation via jaybird");
             Log.info("Driver version: " + driver.getMajorVersion() + "." + driver.getMinorVersion());
 
-            if (driver.getMajorVersion() < 3) {
+            if (driver.getMajorVersion() == 2) {
                 StringBuilder sb = new StringBuilder();
                 sb.append("Cannot create database, Jaybird 2.x has no implementation for creation database.");
                 throw new SQLException(sb.toString());
@@ -399,7 +387,7 @@ public class SqlScriptRunner {
             properties.setProperty("lc_ctype", charSet);
         temp.setJdbcProperties(properties);
         DatabaseDriver driver = new DefaultDatabaseDriver();
-        driver.setPath("./lib/jaybird-full.jar;../lib/jaybird-full.jar");
+        driver.setPath("./lib/jaybird-3.jar"); // TODO Must use DriverLoader
         driver.setClassName("org.firebirdsql.jdbc.FBDriver");
         driver.setURL("jdbc:firebirdsql://[host]:[port]/[source]");
         temp.setJDBCDriver(driver);

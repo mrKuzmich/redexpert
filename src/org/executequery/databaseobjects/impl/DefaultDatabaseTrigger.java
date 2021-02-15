@@ -1,9 +1,11 @@
 package org.executequery.databaseobjects.impl;
 
 import org.executequery.GUIUtilities;
+import org.executequery.databasemediators.spi.DefaultStatementExecutor;
 import org.executequery.databaseobjects.DatabaseMetaTag;
 import org.executequery.databaseobjects.DatabaseProcedure;
 import org.executequery.databaseobjects.NamedObject;
+import org.underworldlabs.util.MiscUtils;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -23,6 +25,10 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
     private int intTriggerType;
     private long longTriggerType;
     private boolean isMarkedReloadActive;
+
+    public final static long TRIGGER_TYPE_DDL = 16384;
+    public final static long TRIGGER_TYPE_DB = 8192;
+    public final static long RDB_TRIGGER_TYPE_MASK = 24576;
 
     private static String[][] DDL_TRIGGER_ACTION_NAMES =
             {
@@ -161,12 +167,19 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
      *
      * @return the object type
      */
+
+    private int type = -1;
     public int getType() {
-        if (getParent().getMetaDataKey() == META_TYPES[NamedObject.TRIGGER])
-            return TRIGGER;
-        else if (getParent().getMetaDataKey() == META_TYPES[NamedObject.SYSTEM_TRIGGER])
-            return SYSTEM_TRIGGER;
-        return SYSTEM_DATABASE_TRIGGER;
+        if (type == -1) {
+            if (getParent().getMetaDataKey().equalsIgnoreCase(META_TYPES[NamedObject.DATABASE_TRIGGER]))
+                type = NamedObject.DATABASE_TRIGGER;
+            else if (getParent().getMetaDataKey().equalsIgnoreCase(META_TYPES[NamedObject.SYSTEM_TRIGGER]))
+                type = NamedObject.SYSTEM_TRIGGER;
+            else if (getParent().getMetaDataKey().equalsIgnoreCase(META_TYPES[NamedObject.DDL_TRIGGER]))
+                type = NamedObject.DDL_TRIGGER;
+            else type = NamedObject.TRIGGER;
+        }
+        return type;
     }
 
     /**
@@ -268,11 +281,11 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
     }
 
     private int getIntTypeTrigger(long type) {
-        if (type < 8192)
-            return TABLE_TRIGGER;
-        else if (type <= 8196)
+        if ((type & RDB_TRIGGER_TYPE_MASK) == TRIGGER_TYPE_DDL)
+            return DDL_TRIGGER;
+        else if ((type & RDB_TRIGGER_TYPE_MASK) == TRIGGER_TYPE_DB)
             return DATABASE_TRIGGER;
-        else return DDL_TRIGGER;
+        else return TABLE_TRIGGER;
     }
 
     private String triggerTypeFromLong(long type) {
@@ -350,16 +363,11 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
     @Override
     public String getCreateSQLText() {
         StringBuilder sb = new StringBuilder();
-
-        sb.append("SET TERM ^ ;");
-        sb.append("\n\n");
         sb.append("CREATE OR ALTER TRIGGER ");
-        sb.append("\"");
-        sb.append(getName());
-        sb.append("\"");
+        sb.append(MiscUtils.getFormattedObject(getName()));
         if (!getTriggerTableName().isEmpty()) {
             sb.append(" FOR ");
-            sb.append(getTriggerTableName());
+            sb.append(MiscUtils.getFormattedObject(getTriggerTableName()));
         }
         sb.append("\n");
         sb.append(isTriggerActive() ? "ACTIVE" : "INACTIVE");
@@ -370,11 +378,7 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
         sb.append("\n");
         if (triggerSourceCode != null) {
             sb.append(getTriggerSourceCode());
-            sb.append("^");
         }
-        sb.append("\n\n");
-        sb.append("SET TERM ; ^");
-
         return sb.toString();
     }
 
@@ -393,6 +397,7 @@ public class DefaultDatabaseTrigger extends DefaultDatabaseExecutable
     @Override
     protected void getObjectInfo() {
         super.getObjectInfo();
+        DefaultStatementExecutor querySender = new DefaultStatementExecutor(getHost().getDatabaseConnection());
         try {
             ResultSet rs = querySender.getResultSet(queryForInfo()).getResultSet();
             setInfoFromResultSet(rs);

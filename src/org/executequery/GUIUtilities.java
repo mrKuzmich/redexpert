@@ -31,6 +31,7 @@ import org.executequery.databasemediators.ConnectionMediator;
 import org.executequery.databasemediators.DatabaseConnection;
 import org.executequery.gui.*;
 import org.executequery.gui.browser.ConnectionHistory;
+import org.executequery.gui.browser.ConnectionPanel;
 import org.executequery.gui.browser.ConnectionsTreePanel;
 import org.executequery.gui.browser.managment.GrantManagerConnectionListener;
 import org.executequery.gui.drivers.DriversTreePanel;
@@ -185,9 +186,9 @@ public final class GUIUtilities {
         String javaVersion = System.getProperty("java.version");
 
         // initialise and add the status bar
-        statusBar = new StatusBarPanel(" Not Connected", Constants.EMPTY);
+        statusBar = new StatusBarPanel(Bundles.get(ConnectionPanel.class, "status.NotConnected"), Constants.EMPTY);
         statusBar.setFourthLabelText(
-                "JDK" + (javaVersion.length() >= 5 ? javaVersion.substring(0,5) : javaVersion),
+                "JDK" + (javaVersion.length() >= 5 ? javaVersion.substring(0, 5) : javaVersion),
                 SwingConstants.CENTER);
 
         displayStatusBar(SystemProperties.getBooleanProperty(
@@ -284,7 +285,7 @@ public final class GUIUtilities {
         } else {
             while (statusBar.getLabel(4).getMouseListeners().length > 0)
                 statusBar.getLabel(4).removeMouseListener(statusBar.getLabel(4).getMouseListeners()[0]);
-            statusBar.getLabel(4).setText(" not authorized");
+            statusBar.getLabel(4).setText("  " + bundledString("notAuthorized"));
             statusBar.getLabel(4).addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseReleased(MouseEvent e) {
@@ -544,6 +545,10 @@ public final class GUIUtilities {
         }
 
         return getParentFrame();
+    }
+
+    public static ExecuteQueryMenu getExecuteQueryMenu() {
+        return (ExecuteQueryMenu) frame.getJMenuBar();
     }
 
     /**
@@ -1535,13 +1540,23 @@ public final class GUIUtilities {
         Properties properties = UserProperties.getInstance().getProperties();
         SystemResources.setUserPreferences(properties);
 
-        ((DatabaseConnectionRepository) RepositoryCache.load(
-                DatabaseConnectionRepository.REPOSITORY_ID)).save();
-
-        ((ConnectionFoldersRepository) RepositoryCache.load(
-                ConnectionFoldersRepository.REPOSITORY_ID)).save();
-
-        ToolBarProperties.saveTools();
+        try {
+            ((DatabaseConnectionRepository) RepositoryCache.load(
+                    DatabaseConnectionRepository.REPOSITORY_ID)).save();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            ((ConnectionFoldersRepository) RepositoryCache.load(
+                    ConnectionFoldersRepository.REPOSITORY_ID)).save();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            ToolBarProperties.saveTools();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         Log.info("System exiting...");
     }
@@ -1834,6 +1849,10 @@ public final class GUIUtilities {
         } catch (InvocationTargetException e) {
         } catch (InterruptedException e) {
         }
+    }
+
+    public static String bundledString(String key) {
+        return Bundles.get(GUIUtilities.class, key);
     }
 
 }

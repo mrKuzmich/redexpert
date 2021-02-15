@@ -34,10 +34,15 @@ import org.executequery.gui.browser.nodes.DatabaseObjectNode;
 import org.executequery.repository.ConnectionFoldersRepository;
 import org.executequery.repository.DatabaseDriverRepository;
 import org.executequery.repository.RepositoryCache;
+import org.underworldlabs.swing.util.SwingWorker;
 import org.underworldlabs.util.MiscUtils;
 
 import javax.swing.tree.TreeNode;
-import java.util.*;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Properties;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * <p>This class maintains the necessary information for each
@@ -155,6 +160,8 @@ public class DefaultDatabaseConnection implements DatabaseConnection {
      * Whether server certificate is verified
      */
     private boolean verifyServerCertificate;
+
+    private boolean useNewAPI;
 
     private String authMethod;
 
@@ -348,6 +355,14 @@ public class DefaultDatabaseConnection implements DatabaseConnection {
 
     public void setVerifyServerCertCheck(boolean verifyServer) {
         this.verifyServerCertificate = verifyServer;
+    }
+
+    public boolean useNewAPI() {
+        return useNewAPI;
+    }
+
+    public void setUseNewAPI(boolean useNewAPI) {
+        this.useNewAPI = useNewAPI;
     }
 
     public String getConnectionMethod() {
@@ -571,6 +586,7 @@ public class DefaultDatabaseConnection implements DatabaseConnection {
         copy.setContainerPassword(getContainerPassword());
         copy.setContainerPasswordStored(isContainerPasswordStored());
         copy.setVerifyServerCertCheck(isVerifyServerCertCheck());
+        copy.setUseNewAPI(useNewAPI());
         copy.setServerVersion(getServerVersion());
 
         return copy;
@@ -677,7 +693,7 @@ public class DefaultDatabaseConnection implements DatabaseConnection {
     }
 
     public List<String> getListObjectsDB() {
-        List<String> list = new ArrayList<>();
+        List<String> list = new CopyOnWriteArrayList<>();
         DatabaseObjectNode host = ((ConnectionsTreePanel) GUIUtilities.getDockedTabComponent(ConnectionsTreePanel.PROPERTY_KEY)).getHostNode(this);
         addingChild(list, host);
         return list;
@@ -701,8 +717,16 @@ public class DefaultDatabaseConnection implements DatabaseConnection {
             DatabaseObjectNode node = (DatabaseObjectNode) nodes.nextElement();
             if (!node.isHostNode() && node.getType() != NamedObject.META_TAG)
                 list.add(node.getName().replace("$", "\\$"));
-            if (node.isHostNode() || node.getType() == NamedObject.META_TAG)
-                addingChild(list, node);
+            if (node.isHostNode() || node.getType() == NamedObject.META_TAG) {
+                SwingWorker sw = new SwingWorker() {
+                    @Override
+                    public Object construct() {
+                        addingChild(list, node);
+                        return null;
+                    }
+                };
+                sw.start();
+            }
         }
     }
 

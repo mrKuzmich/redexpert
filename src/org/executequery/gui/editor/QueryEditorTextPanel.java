@@ -33,6 +33,10 @@ import org.underworldlabs.swing.GUIUtils;
 
 import javax.swing.*;
 import javax.swing.border.Border;
+import javax.swing.event.CaretEvent;
+import javax.swing.event.CaretListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.tree.TreePath;
@@ -162,6 +166,9 @@ public class QueryEditorTextPanel extends JPanel {
 
     }
 
+    boolean changed = false;
+
+
     public void registerAutoCompletePopup(AutoCompletePopupProvider autoCompletePopup) {
 
         this.autoCompletePopup = autoCompletePopup;
@@ -172,6 +179,31 @@ public class QueryEditorTextPanel extends JPanel {
         queryPane.getInputMap().put((KeyStroke)
                         autoCompletePopupAction.getValue(Action.ACCELERATOR_KEY),
                 AUTO_COMPLETE_POPUP_ACTION_KEY);
+        queryPane.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                changed = true;
+            }
+        });
+        queryPane.addCaretListener(new CaretListener() {
+            @Override
+            public void caretUpdate(CaretEvent e) {
+                if (changed)
+                    autoCompletePopupAction.actionPerformed(null);
+                changed = false;
+            }
+        });
+
     }
 
     public void addEditorPaneMouseListener(MouseListener listener) {
@@ -466,8 +498,8 @@ public class QueryEditorTextPanel extends JPanel {
      * Sets the table results to the specified
      * <code>ResultSet</code> object for display.
      *
-     * @param the table results to display
-     * @param the executed query of the result set
+     * @param rset  the table results to display
+     * @param query the executed query of the result set
      */
     public void setResultSet(ResultSet rset, String query) {
 
@@ -781,7 +813,7 @@ public class QueryEditorTextPanel extends JPanel {
      * that the text content has been altered from the original
      * or previously saved state.
      *
-     * @param true | false
+     * @param contentChanged true | false
      */
     public void setContentChanged(boolean contentChanged) {
         queryEditor.setContentChanged(contentChanged);

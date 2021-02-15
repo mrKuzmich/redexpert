@@ -23,6 +23,7 @@ package org.executequery.gui.browser.nodes;
 import org.executequery.databaseobjects.DatabaseTable;
 import org.executequery.databaseobjects.NamedObject;
 import org.executequery.databaseobjects.impl.DatabaseTableColumn;
+import org.executequery.databaseobjects.impl.DefaultDatabaseColumn;
 import org.executequery.gui.browser.DatabaseObjectChangeProvider;
 import org.executequery.localization.Bundles;
 import org.underworldlabs.jdbc.DataSourceException;
@@ -173,19 +174,13 @@ public class DatabaseObjectNode extends DefaultMutableTreeNode {
      * Adds this object's children as expanded nodes.
      */
     public void populateChildren() throws DataSourceException {
-
         if (!childrenRetrieved) {
-
             List<DatabaseObjectNode> children = getChildObjects();
             if (children != null) {
-
                 for (int i = 0, n = children.size(); i < n; i++) {
-
                     add(children.get(i));
                 }
-
             }
-
             childrenRetrieved = true;
         }
     }
@@ -313,10 +308,11 @@ public class DatabaseObjectNode extends DefaultMutableTreeNode {
     public String toString() {
         String metadatakey = getMetaDataKey();
         if (metadatakey != null) {
-            if (getType() == NamedObject.TABLE_COLUMN) {
+            if (databaseObject instanceof DatabaseTableColumn) {
                 return ((DatabaseTableColumn) databaseObject).getTable().getName().trim() + "." + getShortName() + ":" + "COLUMN";
-            } else
-                return getShortName() + ":" + getMetaDataKey();
+            } else if (databaseObject instanceof DefaultDatabaseColumn) {
+                return databaseObject.getParent().getName().trim() + "." + getShortName() + ":" + "COLUMN";
+            } else return getShortName() + ":" + getMetaDataKey();
         } else return getShortName();
     }
 

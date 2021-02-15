@@ -66,12 +66,12 @@ public class TableColumnConstraint extends AbstractDatabaseObjectElement
     /**
      * What happens to a foreign key when the primary key is updated
      */
-    private short updateRule;
+    private String updateRule;
 
     /**
      * What happens to the foreign key when primary is deleted
      */
-    private short deleteRule;
+    private String deleteRule;
 
     /**
      * can the evaluation of foreign key constraints be deferred until commit
@@ -257,6 +257,11 @@ public class TableColumnConstraint extends AbstractDatabaseObjectElement
         return null;
     }
 
+    @Override
+    public void setTable(DatabaseTable table) {
+        this.column=new DatabaseTableColumn(table);
+    }
+
     /**
      * Returns the table name associated with this constraint.
      *
@@ -366,19 +371,19 @@ public class TableColumnConstraint extends AbstractDatabaseObjectElement
         this.referencedCatalog = referencedCatalog;
     }
 
-    public short getUpdateRule() {
+    public String getUpdateRule() {
         return updateRule;
     }
 
-    public void setUpdateRule(short updateRule) {
+    public void setUpdateRule(String updateRule) {
         this.updateRule = updateRule;
     }
 
-    public short getDeleteRule() {
+    public String getDeleteRule() {
         return deleteRule;
     }
 
-    public void setDeleteRule(short deleteRule) {
+    public void setDeleteRule(String deleteRule) {
         this.deleteRule = deleteRule;
     }
 

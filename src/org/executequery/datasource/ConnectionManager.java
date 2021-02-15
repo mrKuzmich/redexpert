@@ -23,13 +23,16 @@ package org.executequery.datasource;
 import org.executequery.GUIUtilities;
 import org.executequery.databasemediators.DatabaseConnection;
 import org.executequery.databasemediators.DatabaseDriver;
+import org.executequery.databaseobjects.DatabaseHost;
 import org.executequery.databaseobjects.NamedObject;
+import org.executequery.databaseobjects.impl.DefaultDatabaseMetaTag;
 import org.executequery.gui.browser.ConnectionsTreePanel;
 import org.executequery.gui.browser.nodes.DatabaseObjectNode;
 import org.executequery.log.Log;
 import org.executequery.repository.DatabaseDriverRepository;
 import org.executequery.repository.RepositoryCache;
 import org.underworldlabs.jdbc.DataSourceException;
+import org.underworldlabs.swing.util.SwingWorker;
 import org.underworldlabs.util.SystemProperties;
 
 import javax.resource.ResourceException;
@@ -75,34 +78,49 @@ public final class ConnectionManager {
         }
 
         Log.info("Initialising data source for " + databaseConnection.getName());
-
-//        DataSource dataSource = new ConnectionDataSource(databaseConnection);
-//        ConnectionPool pool = new DefaultConnectionPool(dataSource);
-
-//        ConnectionPool pool = new C3poConnectionPool(databaseConnection);
         ConnectionPool pool = new ConnectionPoolImpl(databaseConnection);
-
-        //pool.setPoolScheme(SystemProperties.getIntProperty("connection.scheme"));
-
         pool.setMinimumConnections(SystemProperties.getIntProperty("user", "connection.initialcount"));
         pool.setInitialConnections(SystemProperties.getIntProperty("user", "connection.initialcount"));
-
-//        pool.ensureCapacity();
-
         connectionPools.put(databaseConnection, pool);
         databaseConnection.setConnected(true);
-        loadTree(((ConnectionsTreePanel) GUIUtilities.getDockedTabComponent(ConnectionsTreePanel.PROPERTY_KEY)).getHostNode(databaseConnection));
+        DatabaseObjectNode hostNode = ((ConnectionsTreePanel) GUIUtilities.getDockedTabComponent(ConnectionsTreePanel.PROPERTY_KEY)).getHostNode(databaseConnection);
+        loadTree(hostNode);
+        DatabaseHost host = (DatabaseHost) hostNode.getDatabaseObject();
+        try {
+            while (host.countFinishedMetaTags() < hostNode.getChildCount()) {
 
+                Thread.sleep(100);
+            }
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         Log.info("Data source " + databaseConnection.getName() + " initialized.");
     }
+
 
     public static void loadTree(DatabaseObjectNode root) {
         root.populateChildren();
         Enumeration<TreeNode> nodes = root.children();
         while (nodes.hasMoreElements()) {
             DatabaseObjectNode node = (DatabaseObjectNode) nodes.nextElement();
-            if (node.isHostNode() || node.getType() == NamedObject.META_TAG)
-                loadTree(node);
+            if (node.isHostNode() || node.getType() == NamedObject.META_TAG) {
+                SwingWorker sw = new SwingWorker() {
+                    @Override
+                    public Object construct() {
+                        loadTree(node);
+                        return null;
+                    }
+
+                    @Override
+                    public void finished() {
+                        if (node.getType() == NamedObject.META_TAG) {
+                            ((DefaultDatabaseMetaTag) node.getDatabaseObject()).getHost().incCountFinishedMetaTags();
+                        }
+                    }
+                };
+                sw.start();
+            }
         }
 
     }
@@ -131,6 +149,32 @@ public final class ConnectionManager {
             Connection connection = pool.getConnection();
 
             return connection;
+        }
+
+    }
+
+    public static Connection getTemporaryConnection(DatabaseConnection databaseConnection) {
+
+        if (databaseConnection == null) {
+
+            return null;
+        }
+
+        synchronized (databaseConnection) {
+
+            if (connectionPools == null || !connectionPools.containsKey(databaseConnection)) {
+
+                createDataSource(databaseConnection);
+            }
+
+            ConnectionPool pool = connectionPools.get(databaseConnection);
+            DataSource dataSource = getDataSource(databaseConnection);
+            try {
+                return new PooledConnection(dataSource.getConnection(), databaseConnection);
+            } catch (SQLException e) {
+                Log.error("Error get connection", e);
+                return pool.getConnection();
+            }
         }
 
     }

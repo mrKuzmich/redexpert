@@ -25,7 +25,9 @@ import org.executequery.GUIUtilities;
 import org.executequery.databasemediators.DatabaseConnection;
 import org.executequery.databasemediators.spi.DefaultStatementExecutor;
 import org.executequery.databaseobjects.DatabaseColumn;
-import org.executequery.databaseobjects.DatabaseTypeConverter;
+import org.executequery.databaseobjects.NamedObject;
+import org.executequery.databaseobjects.impl.DefaultDatabaseDomain;
+import org.executequery.gui.browser.nodes.DatabaseObjectNode;
 import org.executequery.gui.table.Autoincrement;
 import org.executequery.gui.table.CreateTableSQLSyntax;
 import org.executequery.log.Log;
@@ -64,6 +66,8 @@ public class ColumnData implements Serializable {
     public static final int TYPE_OF_FROM_DOMAIN = 0;
 
     public static final int TYPE_OF_FROM_COLUMN = 1;
+
+    private boolean descriptionAsSingleComment = false;
 
     /**
      * the catalog for this column
@@ -257,6 +261,10 @@ public class ColumnData implements Serializable {
      */
     int typeOfFrom;
 
+    private String collate;
+
+    private String domainCollate;
+
     String mechanism;
 
     boolean cstring;
@@ -396,9 +404,11 @@ public class ColumnData implements Serializable {
         setNotNull(cd.isRequired());
         setSQLType(cd.getTypeInt());
         setDomain(cd.getDomain());
-        setDescription(cd.getDescription());
+        setDescription(cd.getColumnDescription());
         setComputedBy(cd.getComputedSource());
         setDefaultValue(cd.getDefaultValue());
+        if(cd.isIdentity())
+            ai.setIdentity(true);
     }
 
     public boolean isPrimaryKey() {
@@ -505,6 +515,7 @@ public class ColumnData implements Serializable {
     }
 
     public void setColumnSize(int columnSize) {
+
         this.columnSize = columnSize;
     }
 
@@ -554,69 +565,113 @@ public class ColumnData implements Serializable {
 
     public void setDomain(String Domain) {
         domain = Domain;
-        if (!MiscUtils.isNull(domain))
+        if (!MiscUtils.isNull(domain)) {
             getDomainInfo();
+        }
+
+    }
+
+    public void setDomainType(int domainType) {
+        this.domainType = domainType;
+    }
+
+    public void setDomainCharset(String domainCharset) {
+        this.domainCharset = domainCharset;
+    }
+
+    public void setDomainCheck(String domainCheck) {
+        this.domainCheck = domainCheck;
+    }
+
+    public void setDomainDescription(String domainDescription) {
+        this.domainDescription = domainDescription;
+    }
+
+    public void setDomainNotNull(boolean domainNotNull) {
+        this.domainNotNull = domainNotNull;
+    }
+
+    public void setDomainDefault(String domainDefault) {
+        this.domainDefault = domainDefault;
+    }
+
+    public void setDomainComputedBy(String domainComputedBy) {
+        this.domainComputedBy = domainComputedBy;
+    }
+
+    public int getDomainSize() {
+        return domainSize;
+    }
+
+    public void setDomainSize(int domainSize) {
+        this.domainSize = domainSize;
+    }
+
+    public int getDomainScale() {
+        return domainScale;
+    }
+
+    public void setDomainScale(int domainScale) {
+        this.domainScale = domainScale;
+    }
+
+    public int getDomainSubType() {
+        return domainSubType;
+    }
+
+    public void setDomainSubType(int domainSubType) {
+        this.domainSubType = domainSubType;
+    }
+
+    public String getDomainCollate() {
+        return domainCollate;
+    }
+
+    public void setDomainCollate(String domainCollate) {
+        this.domainCollate = domainCollate;
     }
 
     private void getDomainInfo() {
-        String query = "SELECT " +
-                "F.RDB$FIELD_TYPE,\n" +
-                "F.RDB$FIELD_LENGTH,\n" +
-                "F.RDB$FIELD_SCALE,\n" +
-                "F.RDB$FIELD_SUB_TYPE,\n" +
-                "C.RDB$CHARACTER_SET_NAME,\n" +
-                "F.RDB$VALIDATION_SOURCE,\n" +
-                "F.RDB$DESCRIPTION,\n" +
-                "F.RDB$NULL_FLAG,\n" +
-                "F.RDB$DEFAULT_SOURCE,\n" +
-                "F.RDB$FIELD_PRECISION,\n" +
-                "F.RDB$COMPUTED_SOURCE\n" +
-                "FROM RDB$FIELDS AS F \n" +
-                "LEFT JOIN RDB$CHARACTER_SETS AS C ON F.RDB$CHARACTER_SET_ID = C.RDB$CHARACTER_SET_ID\n" +
-                "WHERE RDB$FIELD_NAME='" +
-                domain.trim() + "'";
-        try {
-            ResultSet rs = executor.getResultSet(query).getResultSet();
-            if (rs.next()) {
-                domainType = rs.getInt(1);
-                domainSize = rs.getInt(2);
-                if (rs.getInt(10) != 0)
-                    domainSize = rs.getInt(10);
-                domainScale = Math.abs(rs.getInt(3));
-                domainSubType = rs.getInt(4);
-                domainCharset = rs.getString(5);
-                domainCheck = rs.getString(6);
-                domainDescription = rs.getString(7);
-                domainNotNull = rs.getInt(8) == 1;
-                domainDefault = rs.getString(9);
-                domainComputedBy = rs.getString(11);
-            }
-            domainType = DatabaseTypeConverter.getSqlTypeFromRDBType(domainType, domainSubType);
-            sqlType = domainType;
-            columnSize = domainSize;
-            columnScale = domainScale;
-            columnSubtype = domainSubType;
-            if (!MiscUtils.isNull(domainCheck)) {
-                domainCheck = domainCheck.trim();
-                if (domainCheck.toUpperCase().startsWith("CHECK"))
-                    domainCheck = domainCheck.substring(5).trim();
-                if (domainCheck.startsWith("(") && domainCheck.endsWith(")")) {
-                    domainCheck = domainCheck.substring(1, domainCheck.length() - 1);
+        domain = domain.trim();
+        ConnectionsTreePanel treePanel = (ConnectionsTreePanel) GUIUtilities.getDockedTabComponent(ConnectionsTreePanel.PROPERTY_KEY);
+        DatabaseObjectNode hostNode = treePanel.getHostNode(dc);
+        List<DatabaseObjectNode> metatags = hostNode.getChildObjects();
+        boolean find = false;
+        for (int i = 0; i < metatags.size(); i++) {
+            if (metatags.get(i).getDatabaseObject().getMetaDataKey().equalsIgnoreCase(NamedObject.META_TYPES[NamedObject.DOMAIN])
+                    || metatags.get(i).getDatabaseObject().getMetaDataKey().equalsIgnoreCase(NamedObject.META_TYPES[NamedObject.SYSTEM_DOMAIN])) {
+                List<DatabaseObjectNode> domains = metatags.get(i).getChildObjects();
+                for (DatabaseObjectNode domainNode : domains) {
+                    if (domainNode.getName().equals(domain)) {
+                        DefaultDatabaseDomain defaultDatabaseDomain = (DefaultDatabaseDomain) domainNode.getDatabaseObject();
+                        domainType = defaultDatabaseDomain.getDomainData().domainType;
+                        domainSize = defaultDatabaseDomain.getDomainData().domainSize;
+                        domainScale = defaultDatabaseDomain.getDomainData().domainScale;
+                        domainSubType = defaultDatabaseDomain.getDomainData().domainSubType;
+                        domainCharset = defaultDatabaseDomain.getDomainData().domainCharset;
+                        domainCheck = defaultDatabaseDomain.getDomainData().domainCheck;
+                        domainDescription = defaultDatabaseDomain.getDomainData().domainDescription;
+                        domainNotNull = defaultDatabaseDomain.getDomainData().domainNotNull;
+                        domainDefault = defaultDatabaseDomain.getDomainData().domainDefault;
+                        domainComputedBy = defaultDatabaseDomain.getDomainData().domainComputedBy;
+                        domainCollate = defaultDatabaseDomain.getDomainData().domainCollate;
+                        find = true;
+                        break;
+                    }
                 }
+                if (find)
+                    break;
             }
-            domainDefault = processedDefaultValue(domainDefault);
-            if (MiscUtils.isNull(domainCharset)) {
-                domainCharset = CreateTableSQLSyntax.NONE;
-            } else domainCharset = domainCharset.trim();
-            setCharset(domainCharset);
-
-        } catch (SQLException | NullPointerException e) {
-            Log.error("Error get ColumnData get Domain:", e);
-        } catch (Exception e) {
-            Log.error("Error get ColumnData get Domain:", e);
-        } finally {
-            executor.releaseResources();
         }
+        sqlType = domainType;
+        columnSize = domainSize;
+        columnScale = domainScale;
+        columnSubtype = domainSubType;
+        setCharset(domainCharset);
+        setCollate(domainCollate);
+        if (!find)
+            Log.error("Error get Domain '" + domain + "'");
+
 
     }
 
@@ -649,8 +704,8 @@ public class ColumnData implements Serializable {
 
         if (typeOf) {
             if (getTypeOfFrom() == TYPE_OF_FROM_DOMAIN) {
-                return "TYPE OF " + getDomainInQuotes();
-            } else return "TYPE OF COLUMN " + getTableInQuotes() + "." + getColumnTableInQuotes();
+                return "TYPE OF " + getFormattedDomain();
+            } else return "TYPE OF COLUMN " + getFormattedTable() + "." + getFormattedColumnTable();
         }
         String typeString = getColumnType();
         if (StringUtils.isBlank(typeString)) {
@@ -675,9 +730,10 @@ public class ColumnData implements Serializable {
                         type == Types.BLOB || type == Types.LONGVARCHAR
                         || type == Types.LONGVARBINARY)) {
             if (type == Types.BLOB || type == Types.LONGVARCHAR
-                    || type == Types.LONGVARBINARY)
-                sb.append(" segment size ").append(getColumnSize());
-            else if (isEditSize() && getColumnSize() > 0 && !isDateDataType()
+                    || type == Types.LONGVARBINARY) {
+                if (getColumnSize() != 80)
+                    sb.append(" SEGMENT SIZE ").append(getColumnSize());
+            } else if (isEditSize() && getColumnSize() > 0 && !isDateDataType()
                     && !isNonPrecisionType()) {
                 sb.append("(");
                 sb.append(getColumnSize());
@@ -887,7 +943,7 @@ public class ColumnData implements Serializable {
         setDefaultValue(defaultValue);
     }
 
-    private String processedDefaultValue(String defaultValue) {
+    public String processedDefaultValue(String defaultValue) {
         if (!MiscUtils.isNull(defaultValue)) {
             defaultValue = defaultValue.trim();
             if (defaultValue.toUpperCase().startsWith("DEFAULT"))
@@ -903,8 +959,8 @@ public class ColumnData implements Serializable {
         return table;
     }
 
-    public String getTableInQuotes() {
-        return MiscUtils.wordInQuotes(table);
+    public String getFormattedTable() {
+        return getFormattedObject(table);
     }
 
     public void setTable(int tableIndex) {
@@ -915,8 +971,8 @@ public class ColumnData implements Serializable {
         return columnTable;
     }
 
-    public String getColumnTableInQuotes() {
-        return MiscUtils.wordInQuotes(columnTable);
+    public String getFormattedColumnTable() {
+        return getFormattedObject(columnTable);
     }
 
     public void setColumnTable(String columnTable) {
@@ -970,13 +1026,34 @@ public class ColumnData implements Serializable {
         this.cstring = cstring;
     }
 
-    public String getDomainInQuotes() {
-        return MiscUtils.wordInQuotes(domain);
+    public String getFormattedDomain() {
+        return getFormattedObject(domain);
     }
 
-    public String getColumnNameInQuotes() {
-        return MiscUtils.wordInQuotes(columnName);
+    public String getFormattedColumnName() {
+        return getFormattedObject(columnName);
     }
+
+    String getFormattedObject(String obj) {
+        return MiscUtils.getFormattedObject(obj);
+    }
+
+    public boolean isDescriptionAsSingleComment() {
+        return descriptionAsSingleComment;
+    }
+
+    public void setDescriptionAsSingleComment(boolean descriptionAsSingleComment) {
+        this.descriptionAsSingleComment = descriptionAsSingleComment;
+    }
+
+    public String getCollate() {
+        return collate;
+    }
+
+    public void setCollate(String collate) {
+        this.collate = collate;
+    }
+
 }
 
 

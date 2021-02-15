@@ -103,6 +103,8 @@ public interface ColumnConstraint extends DatabaseObjectElement {
      */
     DatabaseTable getTable();
 
+    void setTable(DatabaseTable table);
+
     /**
      * Returns the table name associated with this constraint.
      *
@@ -181,9 +183,9 @@ public interface ColumnConstraint extends DatabaseObjectElement {
      */
     void detachFromColumn();
 
-    short getUpdateRule();
+    String getUpdateRule();
 
-    short getDeleteRule();
+    String getDeleteRule();
 
     short getDeferrability();
 

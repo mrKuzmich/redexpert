@@ -38,6 +38,7 @@ import org.underworldlabs.util.SystemProperties;
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
 import java.awt.*;
+import java.util.Enumeration;
 import java.util.Map;
 
 /**
@@ -54,6 +55,7 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
 
     private Color textForeground;
     private Color selectedTextForeground;
+    private Color disabledTextForeground;
 
     private Color selectedBackground;
     private Font treeFont;
@@ -62,12 +64,12 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
      * Constructs a new instance and initialises any variables
      */
     public BrowserTreeCellRenderer(Map<String, Icon> icons) {
-
         this.icons = icons;
 
         textForeground = UIManager.getColor("Tree.textForeground");
         selectedTextForeground = UIManager.getColor("Tree.selectionForeground");
         selectedBackground = UIManager.getColor("Tree.selectionBackground");
+        disabledTextForeground = UIManager.getColor("Button.disabledText");
         reloadFont();
 
         setIconTextGap(10);
@@ -80,6 +82,15 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
         }
 
         sb = new StringBuilder();
+    }
+
+    public static void printUIManagerKeys() {
+        UIDefaults defaults = UIManager.getDefaults();
+        Enumeration<Object> keysEnumeration = defaults.keys();
+        while (keysEnumeration.hasMoreElements()) {
+            Object key = keysEnumeration.nextElement();
+            System.out.println(key);
+        }
     }
 
     /**
@@ -168,6 +179,10 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                     setIcon(icons.get(BrowserConstants.TABLE_TRIGGER_IMAGE));
                     break;
                 }
+                if (databaseObject.getMetaDataKey().compareToIgnoreCase("ddl trigger") == 0) {
+                    setIcon(icons.get(BrowserConstants.DDL_TRIGGER_IMAGE));
+                    break;
+                }
                 if (databaseObject.getMetaDataKey().compareToIgnoreCase("global temporary") == 0) {
                     setIcon(icons.get(BrowserConstants.GLOBAL_TABLES_IMAGE));
                     break;
@@ -186,6 +201,10 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                 }
                 if (databaseObject.getMetaDataKey().compareToIgnoreCase("role") == 0) {
                     setIcon(icons.get(BrowserConstants.ROLE_IMAGE));
+                    break;
+                }
+                if (databaseObject.getMetaDataKey().compareToIgnoreCase("system role") == 0) {
+                    setIcon(icons.get(BrowserConstants.SYSTEM_ROLE_IMAGE));
                     break;
                 }
                 if (databaseObject.getMetaDataKey().compareToIgnoreCase("exception") == 0) {
@@ -209,7 +228,7 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                     break;
                 }
                 if (databaseObject.getMetaDataKey().compareToIgnoreCase("database trigger") == 0) {
-                    setIcon(icons.get(BrowserConstants.SYSTEM_DATABASE_TRIGGER_IMAGE));
+                    setIcon(icons.get(BrowserConstants.DB_TRIGGER_IMAGE));
                     break;
                 }
                 if (databaseObject.getMetaDataKey().compareToIgnoreCase("package") == 0) {
@@ -238,11 +257,7 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
 
             case NamedObject.INDEX:
             case NamedObject.TABLE_INDEX:
-                DefaultDatabaseIndex index = (DefaultDatabaseIndex) databaseObject;
-                if (index.isActive())
-                    setIcon(icons.get(BrowserConstants.INDEXES_ACTIVE_IMAGE));
-                else
-                    setIcon(icons.get(BrowserConstants.INDEXES_IMAGE));
+                setIcon(icons.get(BrowserConstants.INDEXES_IMAGE));
                 break;
 
             case NamedObject.PROCEDURE:
@@ -270,11 +285,11 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                 break;
 
             case NamedObject.TRIGGER:
-                DefaultDatabaseTrigger trigger = (DefaultDatabaseTrigger) databaseObject;
-                if (trigger.isTriggerActive())
-                    setIcon(icons.get(BrowserConstants.TABLE_TRIGGER_ACTIVE_IMAGE));
-                else
-                    setIcon(icons.get(BrowserConstants.TABLE_TRIGGER_IMAGE));
+                setIcon(icons.get(BrowserConstants.TABLE_TRIGGER_IMAGE));
+                break;
+
+            case NamedObject.DDL_TRIGGER:
+                setIcon(icons.get(BrowserConstants.DDL_TRIGGER_IMAGE));
                 break;
 
             case NamedObject.PACKAGE:
@@ -286,6 +301,10 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                 break;
             case NamedObject.ROLE:
                 setIcon(icons.get(BrowserConstants.ROLE_IMAGE));
+                break;
+
+            case NamedObject.SYSTEM_ROLE:
+                setIcon(icons.get(BrowserConstants.SYSTEM_ROLE_IMAGE));
                 break;
 
             case NamedObject.EXCEPTION:
@@ -320,12 +339,8 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
                 setIcon(icons.get(BrowserConstants.FOLDER_INDEXES_IMAGE));
                 break;
 
-            case NamedObject.SYSTEM_DATABASE_TRIGGER:
-                trigger = (DefaultDatabaseTrigger) databaseObject;
-                if (trigger.isTriggerActive())
-                    setIcon(icons.get(BrowserConstants.SYSTEM_DATABASE_TRIGGER_ACTIVE_IMAGE));
-                else
-                    setIcon(icons.get(BrowserConstants.SYSTEM_DATABASE_TRIGGER_IMAGE));
+            case NamedObject.DATABASE_TRIGGER:
+                setIcon(icons.get(BrowserConstants.DB_TRIGGER_IMAGE));
                 break;
 
             case NamedObject.SYSTEM_TRIGGER:
@@ -409,15 +424,30 @@ public class BrowserTreeCellRenderer extends AbstractTreeCellRenderer {
 
         this.selected = isSelected;
         if (!selected) {
-
             setForeground(textForeground);
+            if (databaseObject != null)
+                if (node.isSystem())
+                    setForeground(Color.RED);
+                else {
+                    if (databaseObject instanceof DefaultDatabaseTrigger) {
+                        DefaultDatabaseTrigger trigger = (DefaultDatabaseTrigger) databaseObject;
+                        if (!trigger.isTriggerActive())
+                            setForeground(disabledTextForeground);
+                    }
+                    if (databaseObject instanceof DefaultDatabaseIndex) {
+                        DefaultDatabaseIndex index = (DefaultDatabaseIndex) databaseObject;
+                        if (!index.isActive())
+                            setForeground(disabledTextForeground);
+                    }
+                }
 
         } else {
 
             setForeground(selectedTextForeground);
         }
-
-        setFont(treeFont);
+        if (type == NamedObject.META_TAG && node.getChildCount() > 0)
+            setFont(treeFont.deriveFont(Font.BOLD));
+        else setFont(treeFont);
         JTree.DropLocation dropLocation = tree.getDropLocation();
         if (dropLocation != null && type == NamedObject.BRANCH_NODE
                 && dropLocation.getChildIndex() == -1

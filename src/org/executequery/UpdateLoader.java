@@ -7,6 +7,7 @@ import org.executequery.log.Log;
 import org.executequery.util.ApplicationProperties;
 import org.executequery.util.UserProperties;
 import org.json.JSONObject;
+import org.underworldlabs.util.FileUtils;
 import org.underworldlabs.util.MiscUtils;
 
 import javax.swing.*;
@@ -21,6 +22,7 @@ import java.nio.file.Paths;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -49,6 +51,7 @@ public class UpdateLoader extends JFrame {
     private JScrollPane scrollPane;
     private JPanel panel1;
     private JPanel panel2;
+    private JProgressBar progressBar;
     private String repoArg;
 
     public void setRepoArg(String repoArg) {
@@ -146,6 +149,9 @@ public class UpdateLoader extends JFrame {
             }
         });
         panel2.add(cancelButton);
+        progressBar = new JProgressBar();
+        panel1.add(progressBar, BorderLayout.NORTH);
+        progressBar.setVisible(false);
         panel1.add(scrollPane, BorderLayout.CENTER);
         panel1.add(panel2, BorderLayout.SOUTH);
 
@@ -184,35 +190,30 @@ public class UpdateLoader extends JFrame {
         updateLoader.setVisible(true);
         updateLoader.update();
     }
-    private void download() {
-        worker = new Thread(
-                () -> {
-                    try {
-                        String parent = new File(ExecuteQuery.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent();
-                        parent += "/";
-                        File aNew = new File(parent);
-                        root = parent + "/update/";
-                        downloadFile(downloadLink);
-                        unzip();
-                        aNew.mkdir();
-                        copyFiles(new File(root), aNew.getAbsolutePath());
-                        cleanup();
-                        restartButton.setEnabled(true);
-                        outText.setText(outText.getText() + "\nUpdate Finished!");
-                        cancelButton.setText("Restart later");
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        JOptionPane.showMessageDialog(null, "An error occurred while preforming update!");
-                    }
-                });
-        worker.start();
+
+    private static void applySystemProperties() {
+
+        String encoding = stringApplicationProperty("system.file.encoding");
+        if (StringUtils.isNotBlank(encoding)) {
+
+            System.setProperty("file.encoding", encoding);
+        }
+
+        String settingDirName = stringPropertyFromConfig("eq.user.home.dir");
+        settingDirName = settingDirName.replace("$HOME", System.getProperty("user.home"));
+        System.setProperty("executequery.user.home.dir", settingDirName);
+        ApplicationContext.getInstance().setUserSettingsDirectoryName(settingDirName);
+
+        String build = stringApplicationProperty("eq.build");
+        System.setProperty("executequery.build", build);
+        ApplicationContext.getInstance().setBuild(build);
     }
 
     private void launch() {
         ProcessBuilder pb = null;
         try {
             StringBuilder sb = new StringBuilder("./RedExpert");
-            if(System.getProperty("os.arch").toLowerCase().contains("amd64"))
+            if (System.getProperty("os.arch").toLowerCase().contains("amd64"))
                 sb.append("64");
             if (System.getProperty("os.name").toLowerCase().contains("win"))
                 sb.append(".exe");
@@ -343,31 +344,25 @@ public class UpdateLoader extends JFrame {
         }
     }
 
-    private static void applySystemProperties() {
-
-        String encoding = stringApplicationProperty("system.file.encoding");
-        if (StringUtils.isNotBlank(encoding)) {
-
-            System.setProperty("file.encoding", encoding);
+    private static String stringPropertyFromConfig(String key) {
+        Properties props = null;
+        try {
+            props = FileUtils.loadProperties(MiscUtils.loadURLs("./config/redexpert_config.ini;../config/redexpert_config.ini"));
+            return props.getProperty(key);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "";
         }
 
-        String settingDirName = stringApplicationProperty("eq.user.home.dir");
-        System.setProperty("executequery.user.home.dir", settingDirName);
-        ApplicationContext.getInstance().setUserSettingsDirectoryName(settingDirName);
-
-        String build = stringApplicationProperty("eq.build");
-        System.setProperty("executequery.build", build);
-        ApplicationContext.getInstance().setBuild(build);
     }
 
     public boolean isNeedUpdate() {
         version = getLastVersion(repo);
+        ApplicationVersion remoteVersion = new ApplicationVersion(version);
         String localVersion = System.getProperty("executequery.minor.version");
 
-        if (version != null && localVersion != null) {
-            int newVersion = Integer.valueOf(version.replaceAll("\\.", ""));
-            int currentVersion = Integer.valueOf(localVersion.replaceAll("\\.", ""));
-            return (newVersion > currentVersion);
+        if (localVersion != null) {
+            return remoteVersion.isNewerThan(localVersion);
         }
         return false;
     }
@@ -401,13 +396,30 @@ public class UpdateLoader extends JFrame {
             try {
 
                 JSONObject obj = JSONAPI.getJsonObjectFromArray(JSONAPI.getJsonArray(
-                        "http://builds.red-soft.biz/api/artifacts/by_build/?project=red_expert&version=" + version),
+                        "http://builds.red-soft.biz/api/v1/artifacts/by_build/?project=red_expert&version=" + version),
                         "artifact_id",
-                        "red_expert:red_expert:" + version + ":zip:bin");
+                        "red_expert:bin:" + version + ":zip");
                 downloadLink = "http://builds.red-soft.biz/" + obj.getString("file");
                 download();
             } catch (Exception e) {
-                Log.error(e.getMessage());
+                outText.append("\n");
+                e.printStackTrace(new PrintWriter(new Writer() {
+                    @Override
+                    public void write(char[] cbuf, int off, int len) throws IOException {
+                        outText.append("\n");
+                        outText.append(new String(cbuf));
+                    }
+
+                    @Override
+                    public void flush() throws IOException {
+
+                    }
+
+                    @Override
+                    public void close() throws IOException {
+
+                    }
+                }));
             }
         } else {
             outText.setText("Contacting Download Server...");
@@ -425,8 +437,25 @@ public class UpdateLoader extends JFrame {
                         downloadLink = JSONAPI.getJsonPropertyFromUrl(url + "genlink/", "link", heads);
                         download();
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
+                } catch (Exception e) {
+                    outText.append("\n");
+                    e.printStackTrace(new PrintWriter(new Writer() {
+                        @Override
+                        public void write(char[] cbuf, int off, int len) throws IOException {
+                            outText.append("\n");
+                            outText.append(new String(cbuf));
+                        }
+
+                        @Override
+                        public void flush() throws IOException {
+
+                        }
+
+                        @Override
+                        public void close() throws IOException {
+
+                        }
+                    }));
                 }
             }
         }
@@ -437,20 +466,81 @@ public class UpdateLoader extends JFrame {
         URLConnection conn = url.openConnection();
         InputStream is = conn.getInputStream();
         long max = conn.getContentLength();
-        outText.setText(outText.getText() + "\n" + "Downloading file...\nUpdate Size(compressed): " + max + " Bytes");
+        outText.setText(outText.getText() + "\n" + "Downloading file...\nUpdate Size(compressed): " + getUsabilitySize(max));
         BufferedOutputStream fOut = new BufferedOutputStream(new FileOutputStream(new File("update.zip")));
         byte[] buffer = new byte[32 * 1024];
         int bytesRead;
-        int in = 0;
+        long in = 0;
+        int delimiter = 1024;
+        progressBar.setVisible(true);
+        progressBar.setMaximum((int) (max / delimiter));
+        progressBar.setMinimum(0);
+        progressBar.setValue(0);
+        String textOut = outText.getText();
         while ((bytesRead = is.read(buffer)) != -1) {
             in += bytesRead;
             fOut.write(buffer, 0, bytesRead);
+            outText.setText(textOut + "\n" + getUsabilitySize(in));
+            progressBar.setValue((int) (in / delimiter));
         }
+        progressBar.setValue(0);
+        progressBar.setVisible(false);
         fOut.flush();
         fOut.close();
         is.close();
         outText.setText(outText.getText() + "\nDownload Complete!");
 
+    }
+
+    String getUsabilitySize(long countByte) {
+        int oneByte = 1024;
+        int delimiter = 103;
+        long drob = 0;
+        if (countByte > 1024) {
+            drob = (countByte % oneByte) / delimiter;
+            countByte = countByte / oneByte;
+            if (countByte > oneByte) {
+                drob = (countByte % oneByte) / delimiter;
+                countByte = countByte / oneByte;
+                if (countByte > oneByte) {
+                    drob = (countByte % oneByte) / delimiter;
+                    countByte = countByte / oneByte;
+                    if (countByte > oneByte) {
+                        drob = (countByte % oneByte) / delimiter;
+                        countByte = countByte / oneByte;
+                        return countByte + "," + drob + "Tb";
+                    } else return countByte + "," + drob + "Gb";
+                } else return countByte + "," + drob + "Mb";
+            } else return countByte + "," + drob + "Kb";
+        } else return countByte + "b";
+    }
+
+    private void download() {
+        worker = new Thread(
+                () -> {
+                    try {
+                        String parent = new File(ExecuteQuery.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent();
+                        parent += "/";
+                        File aNew = new File(parent);
+                        root = parent + "/update/";
+                        downloadFile(downloadLink);
+                        unzip();
+                        aNew.mkdir();
+                        copyFiles(new File(root), aNew.getAbsolutePath());
+                        cleanup();
+                        restartButton.setEnabled(true);
+                        outText.setText(outText.getText() + "\nUpdate Finished!");
+                        cancelButton.setText("Restart later");
+                    } catch (FileNotFoundException ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(null, "Access denied. Please restart RedExpert as an admin!");
+
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(null, "An error occurred while preforming update!");
+                    }
+                });
+        worker.start();
     }
 
 }

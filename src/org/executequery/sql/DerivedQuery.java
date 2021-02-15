@@ -38,6 +38,8 @@ public final class DerivedQuery {
 
     private final String originalQuery;
 
+    private String queryWithoutComments;
+
     private List<QueryTable> queryTables;
 
     static {
@@ -56,6 +58,11 @@ public final class DerivedQuery {
         super();
         this.originalQuery = originalQuery;
         this.derivedQuery = originalQuery;
+    }
+
+    public DerivedQuery(String originalQuery, String queryWithoutComments) {
+        this(originalQuery);
+        this.queryWithoutComments = queryWithoutComments;
     }
 
     public String getOriginalQuery() {
@@ -153,12 +160,16 @@ public final class DerivedQuery {
         return null;
     }
 
+    int type = -1;
     public int getQueryType() {
 
-        int type = -1;
-        String query = derivedQuery.replaceAll("\n", " ").toUpperCase();
+        if (type != -1)
+            return type;
+        if (queryWithoutComments == null)
+            queryWithoutComments = derivedQuery;
+        String query = queryWithoutComments.replaceAll("\n", " ").toUpperCase().trim();
 
-        if (query.indexOf("SELECT ") == 0 && query.indexOf(" INTO ") != -1) {
+        if (query.indexOf("SELECT ") == 0 && query.contains(" INTO ")) {
 
             type = QueryTypes.SELECT_INTO;
 
@@ -263,9 +274,33 @@ public final class DerivedQuery {
 
             type = QueryTypes.CREATE_DATABASE;
 
+        } else if (query.indexOf("CREATE OR ALTER") == 0) {
+
+            type = QueryTypes.CREATE_OR_ALTER;
+
+        } else if (query.indexOf("CREATE") == 0) {
+
+            type = QueryTypes.CREATE_OBJECT;
+
+        } else if (query.indexOf("RECREATE") == 0) {
+
+            type = QueryTypes.RECREATE_OBJECT;
+
+        } else if (query.indexOf("ALTER") == 0) {
+
+            type = QueryTypes.ALTER_OBJECT;
+
         } else if (query.indexOf("SET SQL DIALECT") == 0) {
 
             type = QueryTypes.SQL_DIALECT;
+
+        } else if (query.indexOf("SET AUTODDL ON") == 0) {
+
+            type = QueryTypes.SET_AUTODDL_ON;
+
+        } else if (query.indexOf("SET AUTODDL OFF") == 0) {
+
+            type = QueryTypes.SET_AUTODDL_OFF;
 
         } else {
 
@@ -275,6 +310,13 @@ public final class DerivedQuery {
         return type;
     }
 
+    public String getQueryWithoutComments() {
+        return queryWithoutComments;
+    }
+
+    public void setQueryWithoutComments(String queryWithoutComments) {
+        this.queryWithoutComments = queryWithoutComments;
+    }
 }
 
 

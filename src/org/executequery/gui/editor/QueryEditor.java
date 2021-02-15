@@ -34,6 +34,7 @@ import org.executequery.gui.editor.autocomplete.QueryEditorAutoCompletePopupProv
 import org.executequery.gui.resultset.ResultSetTable;
 import org.executequery.gui.resultset.ResultSetTableModel;
 import org.executequery.gui.text.TextEditor;
+import org.executequery.localization.Bundles;
 import org.executequery.log.Log;
 import org.executequery.print.TablePrinter;
 import org.executequery.print.TextPrinter;
@@ -52,6 +53,8 @@ import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
 import java.awt.print.Printable;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -75,10 +78,10 @@ public class QueryEditor extends DefaultTabView
 
 {
 
-    public static final String TITLE = "Query Editor";
+    public static final String TITLE = Bundles.get(QueryEditor.class, "title");
     public static final String FRAME_ICON = "Edit16.png";
 
-    private static final String DEFAULT_SCRIPT_PREFIX = "script";
+    private static final String DEFAULT_SCRIPT_PREFIX = Bundles.get(QueryEditor.class, "script");
 
     private static final String DEFAULT_SCRIPT_SUFFIX = ".sql";
 
@@ -277,14 +280,27 @@ public class QueryEditor extends DefaultTabView
         Vector<DatabaseConnection> connections =
                 ConnectionManager.getActiveConnections();
         connectionsCombo = new OpenConnectionsComboBox(this, connections);
-        connectionsCombo.addActionListener(new ActionListener() {
+        connectionsCombo.addItemListener(new ItemListener() {
+            @Override
+            public void itemStateChanged(ItemEvent e) {
+                if (e.getStateChange() == ItemEvent.SELECTED) {
+                    String idConnection = null;
+                    if (oldConnection == null)
+                        idConnection = QueryEditorHistory.NULL_CONNECTION;
+                    else idConnection = oldConnection.getId();
+                    QueryEditorHistory.changedConnectionEditor(idConnection, getSelectedConnection().getId(), scriptFile.getAbsolutePath());
+                    oldConnection = getSelectedConnection();
+                }
+            }
+        });
+                /*(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
                 if (oldConnection != null)
                     QueryEditorHistory.changedConnectionEditor(oldConnection.getId(), getSelectedConnection().getId(), scriptFile.getAbsolutePath());
                 oldConnection = getSelectedConnection();
             }
-        });
+        });*/
         oldConnection = (DatabaseConnection) connectionsCombo.getSelectedItem();
 
         txBox = new TransactionIsolationCombobox();
@@ -295,15 +311,15 @@ public class QueryEditor extends DefaultTabView
             }
         });
 
-        maxRowCountCheckBox = new JCheckBox();
-        maxRowCountCheckBox.setToolTipText("Enable/disable max records");
+        maxRowCountCheckBox = new JCheckBox(bundleString("MaxRows"));
+        maxRowCountCheckBox.setToolTipText(bundleString("MaxRows.tool-tip"));
         maxRowCountCheckBox.addChangeListener(new ChangeListener() {
             public void stateChanged(ChangeEvent e) {
                 maxRowCountCheckBoxSelected();
             }
         });
-        stopOnErrorCheckBox = new JCheckBox("Stop On Error");
-        stopOnErrorCheckBox.setToolTipText("Enable/disable stopping when error in script");
+        stopOnErrorCheckBox = new JCheckBox(bundleString("StopOnError"));
+        stopOnErrorCheckBox.setToolTipText(bundleString("StopOnError.tool-tip"));
         stopOnErrorCheckBox.addChangeListener(new ChangeListener() {
             @Override
             public void stateChanged(ChangeEvent e) {
@@ -329,7 +345,7 @@ public class QueryEditor extends DefaultTabView
         gbc.insets.top = 7;
         gbc.insets.left = 5;
         gbc.insets.right = 10;
-        toolsPanel.add(createLabel("Connection:", 'C'), gbc);
+        toolsPanel.add(createLabel(Bundles.getCommon("connection"), 'C'), gbc);
         gbc.gridx++;
         gbc.weightx = 1.0;
         gbc.insets.top = 2;
@@ -343,7 +359,7 @@ public class QueryEditor extends DefaultTabView
         gbc.insets.top = 7;
         gbc.insets.left = 5;
         gbc.insets.right = 10;
-        toolsPanel.add(createLabel("Transaction Isolation Level:", 'T'), gbc);
+        toolsPanel.add(createLabel(bundleString("TransactionIsolationLevel"), 'T'), gbc);
         gbc.gridx++;
         gbc.weightx = 1.0;
         gbc.insets.top = 2;
@@ -358,7 +374,7 @@ public class QueryEditor extends DefaultTabView
         gbc.insets.top = 7;
         gbc.insets.right = 10;
         gbc.insets.left = 10;
-        toolsPanel.add(createLabel("Filter:", 'l'), gbc);
+        toolsPanel.add(createLabel(bundleString("Filter"), 'l'), gbc);
         gbc.gridx++;
         gbc.weightx = 0.8;
         gbc.insets.top = 2;
@@ -377,7 +393,7 @@ public class QueryEditor extends DefaultTabView
         gbc.insets.left = 0;
         gbc.insets.top = 7;
         gbc.insets.right = 10;
-        toolsPanel.add(createLabel("Max Rows:", 'R'), gbc);
+        //.add(createLabel("Max Rows:", 'R'), gbc);
         gbc.gridx++;
         gbc.weightx = 0.3;
         gbc.insets.top = 2;
@@ -1079,7 +1095,11 @@ public class QueryEditor extends DefaultTabView
         if (getSelectedConnection() != null)
             connectionID = getSelectedConnection().getId();
         else connectionID = QueryEditorHistory.NULL_CONNECTION;
-        QueryEditorHistory.removeEditor(connectionID, scriptFile.getAbsolutePath());
+        try {
+            QueryEditorHistory.removeEditor(connectionID, scriptFile.getAbsolutePath());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         return true;
     }
@@ -1731,6 +1751,10 @@ public class QueryEditor extends DefaultTabView
 
             splitPane.setDividerLocation(0.5);
         }
+    }
+
+    private String bundleString(String key) {
+        return Bundles.get(this.getClass(), key);
     }
 
 }

@@ -52,13 +52,14 @@ public final class ApplicationVersion {
         tagsValues.put("RC", 3);
         tagsValues.put("", 4);
 
-        Pattern p = Pattern.compile("^(?<x>\\d+)\\.(?<y>\\d+)\\.(?<z>\\d)+(.(?<abc>\\d))?(-(?<tag>[a-zA-Z]+)(\\.(?<build>\\d+))?)?$");
+        Pattern p = Pattern.compile("^(?<x>\\d+)\\.(?<y>\\d+)(\\.(?<z>\\d+))?(.(?<abc>\\d))?(-(?<tag>[a-zA-Z]+)(\\.(?<build>\\d+))?)?$");
         Matcher m = p.matcher(version);
         if(m.matches())
         {
             x = Integer.parseInt(m.group("x"));
             y = Integer.parseInt(m.group("y"));
-            z = Integer.parseInt(m.group("z"));
+            if (m.group("z") != null)
+                z = Integer.parseInt(m.group("z"));
             if (m.group("abc") != null) {
                 abc = Integer.parseInt(m.group("abc"));
             }
@@ -73,13 +74,16 @@ public final class ApplicationVersion {
             throw new java.lang.RuntimeException("Unable to parse version string " + version);
         }
 
-        this.version = constructVersion();
+        this.version = version;
     }
 
     public String constructVersion() {
-        String s = String.format("%d.%d.%d", x, y, z);
-        if (!tag.equals(""))
-        {
+        String s = null;
+        if (z < 0)
+            s = String.format("%d.%d", x, y);
+        else
+            s = String.format("%d.%d.%d", x, y, z);
+        if (!tag.equals("")) {
             s += "-" + tag;
             if (build != -1)
                 s += "." + build;

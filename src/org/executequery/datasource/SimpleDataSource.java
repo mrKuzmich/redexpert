@@ -106,10 +106,12 @@ public class SimpleDataSource implements DataSource, DatabaseDataSource {
         }
 
         if (driver != null) {
+            if (dataSource != null)
+                return dataSource.getConnection();
 
             // If used jaybird
             if (databaseConnection.getJDBCDriver().getClassName().contains("FBDriver") &&
-                !StringUtils.equalsIgnoreCase(databaseConnection.getConnectionMethod(), "jdbc")) {
+                    !StringUtils.equalsIgnoreCase(databaseConnection.getConnectionMethod(), "jdbc")) {
 
                 try {
 
@@ -121,13 +123,22 @@ public class SimpleDataSource implements DataSource, DatabaseDataSource {
                     // otherwise get a message, that multifactor authentication will be unavailable
                     if (cryptoPlugin == null) {
                         try {
+                            String path = databaseConnection.getJDBCDriver().getPath();
+                            path = path.replace("../", "./") + ";" + path.replace("./", "../");
+                            path = path.replace(".../", "../");
+                            path += ";./lib/fbplugin-impl.jar;../lib/fbplugin-impl.jar";
                             Object odb = DynamicLibraryLoader.loadingObjectFromClassLoader(driver,
                                     "biz.redsoft.FBCryptoPluginInitImpl",
-                                    "./lib/fbplugin-impl.jar;./lib/jaybird-cryptoapi.jar;../lib/fbplugin-impl.jar;../lib/jaybird-cryptoapi.jar");
+                                    path);
                             cryptoPlugin = (IFBCryptoPluginInit) odb;
                             // try to initialize crypto plugin
                             cryptoPlugin.init();
 
+                        } catch (NoSuchMethodError e) {
+                            Log.warning("Unable to initialize cryptographic plugin. " +
+                                    "Authentication using cryptographic mechanisms will not be available. " +
+                                    "Please install the crypto pro library to enable cryptographic modules.");
+                            advancedProperties.put("excludeCryptoPlugins", "Multifactor,GostPassword,Certificate");
                         } catch (Exception e) {
                             Log.warning("Unable to initialize cryptographic plugin. " +
                                     "Authentication using cryptographic mechanisms will not be available. " +
@@ -141,8 +152,20 @@ public class SimpleDataSource implements DataSource, DatabaseDataSource {
                         }
                     }
 
-                    dataSource = (IFBDataSource) DynamicLibraryLoader.loadingObjectFromClassLoader(driver,
-                            "FBDataSourceImpl");
+                    if (databaseConnection.useNewAPI()) {
+                        try {
+                            dataSource = (IFBDataSource) DynamicLibraryLoader.loadingObjectFromClassLoaderWithParams(driver,
+                                    "FBDataSourceImpl",
+                                    new DynamicLibraryLoader.Parameter(String.class, "FBOONATIVE"));
+                        } catch (ClassNotFoundException e) {
+                            dataSource = (IFBDataSource) DynamicLibraryLoader.loadingObjectFromClassLoader(driver,
+                                    "FBDataSourceImpl");
+                        }
+
+                    } else {
+                        dataSource = (IFBDataSource) DynamicLibraryLoader.loadingObjectFromClassLoader(driver,
+                                "FBDataSourceImpl");
+                    }
 
                     for (Map.Entry<Object, Object> entry : advancedProperties.entrySet()) {
                         dataSource.setNonStandardProperty(entry.getKey().toString(), entry.getValue().toString());

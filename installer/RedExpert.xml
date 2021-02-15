@@ -1,10 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="./InstallBuilder.rng"-->
 <project>
+    <height>500</height>
+    <width>700</width>
     <shortName>RedExpert</shortName>
     <fullName>Red Expert</fullName>
     <version>${VERSION}</version>
     <licenseFile>${redexpert_dir}/LICENSE.txt</licenseFile>
     <logoImage>logos/red_expert.png</logoImage>
     <allowLanguageSelection>1</allowLanguageSelection>
+    <customLanguageFileList>
+        <language>
+            <code>en</code>
+            <encoding>utf-8</encoding>
+            <file>localization/install_props_en.lng</file>
+        </language>
+        <language>
+            <code>ru</code>
+            <encoding>cp1251</encoding>
+            <file>localization/install_props_ru.lng</file>
+        </language>
+    </customLanguageFileList>
     <componentList>
         <component>
             <name>default</name>
@@ -112,8 +129,37 @@
         <consoleWrite>
             <text>${execution_file}</text>
         </consoleWrite>
+        <iniFileGet>
+            <file>${redexpert_dir}/config/redexpert_config.ini</file>
+            <section>Installer_settings</section>
+            <key>eq.user.home.dir</key>
+            <variable>settings_dir</variable>
+        </iniFileGet>
     </preBuildActionList>
+    <preInstallationActionList>
+        <setInstallerVariableFromRegEx>
+            <name>settings_dir</name>
+            <pattern>\$HOME</pattern>
+            <substitution>${user_home_directory}</substitution>
+            <text>${settings_dir}</text>
+        </setInstallerVariableFromRegEx>
+        <setInstallerVariableFromRegEx>
+            <name>settings_dir</name>
+            <pattern>/</pattern>
+            <substitution>${platform_path_separator}</substitution>
+            <text>${settings_dir}</text>
+        </setInstallerVariableFromRegEx>
+    </preInstallationActionList>
     <preUninstallationActionList>
+        <showQuestion text="${msg(Installer.Parameter.question_remove_props)}"
+                      variable="remove_props"/>
+        <deleteFile>
+            <path>${settings_dir}</path>
+            <matchHiddenFiles>1</matchHiddenFiles>
+            <ruleList>
+                <compareText text="${remove_props}" value="yes" logic="equals"/>
+            </ruleList>
+        </deleteFile>
         <deleteFile path="${installdir}/bin"/>
         <deleteFile path="${installdir}/lib"/>
         <deleteFile path="${installdir}/RedExpertInstallation.log"/>
@@ -171,6 +217,12 @@
         </directoryParameter>
         <stringParameter>
             <name>execute_file</name>
+            <allowEmptyValue>0</allowEmptyValue>
+            <ask>no</ask>
+            <width>40</width>
+        </stringParameter>
+        <stringParameter>
+            <name>settings_dir</name>
             <allowEmptyValue>0</allowEmptyValue>
             <ask>no</ask>
             <width>40</width>

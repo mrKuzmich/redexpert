@@ -87,11 +87,11 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
             String type;
             if (node.getType() == NamedObject.GLOBAL_TEMPORARY)
                 type = NamedObject.META_TYPES[NamedObject.TABLE];
-            else if (node.getType() == NamedObject.SYSTEM_DATABASE_TRIGGER)
+            else if (node.getType() == NamedObject.DATABASE_TRIGGER)
                 type = NamedObject.META_TYPES[NamedObject.TRIGGER];
             else
                 type = NamedObject.META_TYPES[node.getType()];
-            String query = "DROP " + type + " " + MiscUtils.wordInQuotes(node.getName());
+            String query = "DROP " + type + " " + MiscUtils.getFormattedObject(node.getName());
             ExecuteQueryDialog eqd = new ExecuteQueryDialog("Dropping object", query, currentSelection, true);
             eqd.display();
             if (eqd.getCommit())
@@ -210,6 +210,8 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
                     }
                     break;
                 case NamedObject.TRIGGER:
+                case NamedObject.DATABASE_TRIGGER:
+                case NamedObject.DDL_TRIGGER:
                     if (GUIUtilities.isDialogOpen(CreateTriggerPanel.CREATE_TITLE)) {
 
                         GUIUtilities.setSelectedDialog(CreateTriggerPanel.CREATE_TITLE);
@@ -220,25 +222,7 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
                             BaseDialog dialog =
                                     new BaseDialog(CreateTriggerPanel.CREATE_TITLE, false);
                             CreateTriggerPanel panel = new CreateTriggerPanel(currentSelection, dialog,
-                                    NamedObject.TRIGGER);
-                            showDialogCreateObject(panel, dialog);
-                        } finally {
-                            GUIUtilities.showNormalCursor();
-                        }
-                    }
-                    break;
-                case NamedObject.SYSTEM_DATABASE_TRIGGER:
-                    if (GUIUtilities.isDialogOpen(CreateTriggerPanel.CREATE_TITLE)) {
-
-                        GUIUtilities.setSelectedDialog(CreateTriggerPanel.CREATE_TITLE);
-
-                    } else {
-                        try {
-                            GUIUtilities.showWaitCursor();
-                            BaseDialog dialog =
-                                    new BaseDialog(CreateTriggerPanel.CREATE_TITLE, false);
-                            CreateTriggerPanel panel = new CreateTriggerPanel(currentSelection, dialog,
-                                    NamedObject.SYSTEM_DATABASE_TRIGGER);
+                                    type);
                             showDialogCreateObject(panel, dialog);
                         } finally {
                             GUIUtilities.showNormalCursor();
@@ -443,6 +427,8 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
                     }
                     break;
                 case NamedObject.TRIGGER:
+                case NamedObject.DATABASE_TRIGGER:
+                case NamedObject.DDL_TRIGGER:
                     if (GUIUtilities.isDialogOpen(CreateTriggerPanel.EDIT_TITLE)) {
 
                         GUIUtilities.setSelectedDialog(CreateTriggerPanel.EDIT_TITLE);
@@ -453,25 +439,7 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
 
                             BaseDialog dialog = new BaseDialog(CreateTriggerPanel.EDIT_TITLE, false);
                             createObjectPanel = new CreateTriggerPanel(currentSelection, dialog,
-                                    (DefaultDatabaseTrigger) node.getDatabaseObject(), NamedObject.TRIGGER);
-                            showDialogCreateObject(createObjectPanel, dialog);
-                        } finally {
-                            GUIUtilities.showNormalCursor();
-                        }
-                    }
-                    break;
-                case NamedObject.SYSTEM_DATABASE_TRIGGER:
-                    if (GUIUtilities.isDialogOpen(CreateTriggerPanel.EDIT_TITLE)) {
-
-                        GUIUtilities.setSelectedDialog(CreateTriggerPanel.EDIT_TITLE);
-
-                    } else {
-                        try {
-                            GUIUtilities.showWaitCursor();
-
-                            BaseDialog dialog = new BaseDialog(CreateTriggerPanel.EDIT_TITLE, false);
-                            createObjectPanel = new CreateTriggerPanel(currentSelection, dialog,
-                                    (DefaultDatabaseTrigger) node.getDatabaseObject(), NamedObject.SYSTEM_DATABASE_TRIGGER);
+                                    (DefaultDatabaseTrigger) node.getDatabaseObject(), type);
                             showDialogCreateObject(createObjectPanel, dialog);
                         } finally {
                             GUIUtilities.showNormalCursor();
@@ -610,7 +578,13 @@ public class BrowserTreePopupMenuActionListener extends ReflectiveAction {
 
     public void copyName(ActionEvent e) {
         if (currentPath != null) {
-            String name = currentPath.getLastPathComponent().toString();
+            String name;
+            if (currentPath.getLastPathComponent() instanceof DatabaseObjectNode) {
+                DatabaseObjectNode node = (DatabaseObjectNode) currentPath.getLastPathComponent();
+                if (node.getDatabaseObject() instanceof DefaultDatabaseColumn)
+                    name = node.getDatabaseObject().getParent().getName() + "." + node.getName();
+                else name = node.getName();
+            } else name = currentPath.getLastPathComponent().toString();
             GUIUtilities.copyToClipBoard(name);
         }
     }

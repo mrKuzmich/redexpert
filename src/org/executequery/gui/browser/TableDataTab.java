@@ -161,7 +161,7 @@ public class TableDataTab extends JPanel
         alwaysShowCanEditNotePanel = SystemProperties.getBooleanProperty(
                 Constants.USER_PROPERTIES_KEY, "browser.always.show.table.editable.label");
 
-        cancelPanel = new InterruptibleProcessPanel("Executing query for data...");
+        cancelPanel = new InterruptibleProcessPanel(bundleString("labelExecuting"));
 
         EventMediator.registerListener(this);
     }
@@ -585,6 +585,7 @@ public class TableDataTab extends JPanel
 
         StringBuilder sb = new StringBuilder();
         sb.append("<html><body><p><center>Error retrieving object data");
+        e.printStackTrace();
         String message = e.getMessage();
         if (StringUtils.isNotBlank(message)) {
 
@@ -879,7 +880,7 @@ public class TableDataTab extends JPanel
         PanelToolBar bar = new PanelToolBar();
         RolloverButton addRolloverButton = new RolloverButton();
         addRolloverButton.setIcon(GUIUtilities.loadIcon("add_16.png"));
-        addRolloverButton.setToolTipText("Insert record");
+        addRolloverButton.setToolTipText(bundleString("InsertRecord"));
         addRolloverButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -893,7 +894,7 @@ public class TableDataTab extends JPanel
         bar.add(addRolloverButton);
         RolloverButton deleteRolloverButton = new RolloverButton();
         deleteRolloverButton.setIcon(GUIUtilities.loadIcon("delete_16.png"));
-        deleteRolloverButton.setToolTipText("Delete record");
+        deleteRolloverButton.setToolTipText(bundleString("DeleteRecord"));
         deleteRolloverButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -913,7 +914,7 @@ public class TableDataTab extends JPanel
         bar.add(deleteRolloverButton);
         RolloverButton commitRolloverButton = new RolloverButton();
         commitRolloverButton.setIcon(GUIUtilities.loadIcon("Commit16.png"));
-        commitRolloverButton.setToolTipText("Commit");
+        commitRolloverButton.setToolTipText(bundleString("Commit"));
         commitRolloverButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -933,7 +934,7 @@ public class TableDataTab extends JPanel
         bar.add(commitRolloverButton);
         RolloverButton rollbackRolloverButton = new RolloverButton();
         rollbackRolloverButton.setIcon(GUIUtilities.loadIcon("Rollback16.png"));
-        rollbackRolloverButton.setToolTipText("Rollback");
+        rollbackRolloverButton.setToolTipText(bundleString("Rollback"));
         rollbackRolloverButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -943,7 +944,7 @@ public class TableDataTab extends JPanel
         });
         bar.add(rollbackRolloverButton);
         RolloverButton fetchAllRolloverButton = new RolloverButton();
-        fetchAllRolloverButton.setText("Fetch all");
+        fetchAllRolloverButton.setText(bundleString("FetchAll"));
         fetchAllRolloverButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent actionEvent) {
@@ -1181,6 +1182,10 @@ public class TableDataTab extends JPanel
         } catch (SQLException e) {
             e.printStackTrace();
         }
+    }
+
+    private String bundleString(String key) {
+        return Bundles.get(TableDataTab.class, key);
     }
 
 

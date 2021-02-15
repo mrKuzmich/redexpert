@@ -4,6 +4,15 @@
 
 grammar ProcedureParser;
 
+ queries
+ :query*
+ ;
+ query
+ :create_or_alter_procedure_stmt
+ |execute_block_stmt
+ |.* ';'
+ ;
+
  create_procedure_stmt
  :K_CREATE K_PROCEDURE procedure_name
     (K_AUTHID (K_OWNER|K_CALLER))?
@@ -55,17 +64,17 @@ full_body
 ;
 
 body:
-  (.|MULTILINE_COMMENT|SINGLE_LINE_COMMENT)*
+  (.|COMMENT)*
   |.* K_BEGIN body K_END.*
   ;
 
  local_variable
- :K_DECLARE SPACES K_VARIABLE? SPACES variable_name
-  SPACES datatype
-  (SPACES notnull)?
-  (SPACES K_COLLATE SPACES order_collate)?
-  (SPACES ( '=' |K_DEFAULT ) SPACES default_value)?
-  ';'
+ :K_DECLARE spases_or_comment (K_VARIABLE SPACES_OR_COMMENT)? variable_name
+  spases_or_comment datatype
+  (spases_or_comment notnull)?
+  (spases_or_comment K_COLLATE spases_or_comment order_collate)?
+  (spases_or_comment ( '=' |K_DEFAULT ) spases_or_comment default_value)?
+  ';' SPACES? comment?
   ;
 
   notnull:
@@ -978,6 +987,22 @@ STRING_LITERAL
 BLOB_LITERAL
  : X STRING_LITERAL
  ;
+
+spases_or_comment
+:SPACES COMMENT SPACES
+|SPACES COMMENT
+|COMMENT SPACES
+|SPACES
+;
+
+comment:
+ COMMENT
+ ;
+
+COMMENT
+:SINGLE_LINE_COMMENT
+|MULTILINE_COMMENT
+;
 
 SINGLE_LINE_COMMENT
  : '--' ~[\r\n]* //-> channel(HIDDEN)

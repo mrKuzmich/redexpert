@@ -49,8 +49,6 @@ import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Checks to see if a newer version of Execute Query is available.
@@ -207,7 +205,7 @@ public class CheckForUpdateNotifier implements Interruptible {
         label.setIcon(GUIUtilities.loadIcon("YellowBallAnimated16.gif"));
         label.setToolTipText(newVersionAvailableText());
 
-        statusBar().setThirdLabelText("Update available");
+        statusBar().setThirdLabelText(bundledString("updateAvailable"));
         Log.info("The application needs to be updated");
     }
 
@@ -225,7 +223,7 @@ public class CheckForUpdateNotifier implements Interruptible {
                     List<String> argsList = new ArrayList<String>();
                     if (releaseHub)
                         argsList.add("useReleaseHub");
-                    else if (!ReddatabaseAPI.getToken()) {
+                    else if (ReddatabaseAPI.getHeadersWithToken() == null) {
                         return Constants.WORKER_CANCEL;
                     }
 
@@ -246,10 +244,15 @@ public class CheckForUpdateNotifier implements Interruptible {
                     run = new String[]{"java", "-cp", file.getPath(), "org.executequery.UpdateLoader"};
                     run = (String[]) ArrayUtils.addAll(run, args);
                     try {
+                        File outputLog = new File(ApplicationContext.getInstance().getUserSettingsHome() + System.getProperty("file.separator") + "updater.log");
                         ProcessBuilder pb = new ProcessBuilder(run);
+                        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(outputLog));
+                        pb.redirectError(ProcessBuilder.Redirect.appendTo(outputLog));
                         pb.start();
+
                     } catch (Exception ex) {
                         ex.printStackTrace();
+                        GUIUtilities.displayExceptionErrorDialog("update error", ex);
                     }
                     System.exit(0);
                     return Constants.WORKER_SUCCESS;
@@ -287,7 +290,7 @@ public class CheckForUpdateNotifier implements Interruptible {
         label.setIcon(new PulsatingCircle(label, 6));
         label.setToolTipText(newVersionAvailableText());
 
-        statusBar().setThirdLabelText("Update available");
+        statusBar().setThirdLabelText(bundledString("updateAvailable"));
     }
 
     private JLabel getUpdateNotificationLabel() {
@@ -352,18 +355,15 @@ public class CheckForUpdateNotifier implements Interruptible {
         if (MiscUtils.isNull(repo))
             if (releaseHub)
                 repo = "http://builds.red-soft.biz/release_hub/red_expert/";
-            else repo = "http://reddatabase.ru";
-        return "New version " + version.getVersion() +
-                " is available for download at " +
-                "<a style=\"color:#3F7ED3\" href=\"" + repo + "\">" + repo + "</a>." +
-                "\n\nDo you wish to download new version?";
+            else repo = "http://reddatabase.ru/downloads/redexpert/";
+        return bundledString("downloadVersionMessage", version.getVersion(), repo);
 
     }
 
     private int displayNewDownloadVersionMessage() {
         return GUIUtilities.displayYesNoDialog(
                 new SimpleHtmlContentPane(newDownloadVersionMessage(version)),
-                "Red Expert Update");
+                bundledString("title"));
     }
 
     private Object doWork() {
@@ -456,7 +456,7 @@ public class CheckForUpdateNotifier implements Interruptible {
 
         return GUIUtilities.displayYesNoDialog(
                 new SimpleHtmlContentPane(newVersionMessage(version)),
-                "Red Expert Update");
+                bundledString("title"));
     }
 
     private void logNewVersonInfo() {
@@ -466,7 +466,7 @@ public class CheckForUpdateNotifier implements Interruptible {
 
     private String newVersionAvailableText() {
 
-        return "New version " + version.getVersion() + " available.";
+        return bundledString("newVersionAvailableText", version.getVersion());
     }
 
     private boolean isNewVersion(ApplicationVersion version) {
@@ -499,22 +499,15 @@ public class CheckForUpdateNotifier implements Interruptible {
 
             createProgressDialogForReleaseNotesLoad();
 
-            String apiInfo = repository().getReleaseNotes();
-
-            Pattern p = Pattern.compile("\"body\":\"(.*?)\"", Pattern.CASE_INSENSITIVE);
-
-            Matcher m = p.matcher(apiInfo);
+            String link = repository().getReleaseNotesUrl();
 
             String releaseNotes = "";
-
-            if (m.find()) {
-                releaseNotes = m.group(1).replaceAll("\\\\r\\\\n", "\n");//.split("\\\\r\\\\n");//responseTextLines.substring(m.start(), m.end()).trim();
-            }
+            releaseNotes = JSONAPI.getJsonPropertyFromUrl(link, "body");
 
             closeProgressDialog();
 
             final String finalReleaseNotes = releaseNotes;
-            GUIUtils.invokeAndWait(() -> new InformationDialog("Latest Version Info",
+            GUIUtils.invokeAndWait(() -> new InformationDialog(bundledString("latestVersionInfoTitle"),
                     finalReleaseNotes, InformationDialog.TEXT_CONTENT_VALUE, null));
 
             return Constants.WORKER_SUCCESS;
@@ -522,6 +515,12 @@ public class CheckForUpdateNotifier implements Interruptible {
         } catch (ApplicationException e) {
 
             showExceptionErrorDialog(e);
+
+            return Constants.WORKER_FAIL;
+
+        } catch (IOException e) {
+
+            GUIUtilities.displayExceptionErrorDialog(e.getMessage(), e);
 
             return Constants.WORKER_FAIL;
 
@@ -538,8 +537,8 @@ public class CheckForUpdateNotifier implements Interruptible {
 
             progressDialog = new InterruptibleProgressDialog(
                     GUIUtilities.getParentFrame(),
-                    "Check for update",
-                    "Retrieving new version release notes",
+                    bundledString("checkingUpdatesTitle"),
+                    bundledString("progressDialogForReleaseNotesLabel"),
                     CheckForUpdateNotifier.this);
 
             progressDialog.run();
@@ -560,12 +559,12 @@ public class CheckForUpdateNotifier implements Interruptible {
 
     private String newVersionMessage(ApplicationVersion version) {
 
-        return "New version " + version.getVersion() +
-                " is available for download at " +
-                "<a style=\"color:#3F7ED3\" href=\"https://github.com/redsoftbiz/executequery/releases\">https://github.com/redsoftbiz/executequery/releases</a>." +
-                "\nClick <a  style=\"color:#3F7ED3\" href=\"https://github.com/redsoftbiz/executequery/releases/latest\">here</a>" +
-                " to go to the download page.\n\nDo you wish to view the " +
-                "version notes for this release?";
+        String repo = updateLoader.getRepo();
+        if (MiscUtils.isNull(repo))
+            if (releaseHub)
+                repo = "http://builds.red-soft.biz/release_hub/red_expert/";
+            else repo = "https://reddatabase.ru/downloads/redexpert/";
+        return bundledString("newVersionMessage", version.getVersion(), repo, repo);
     }
 
     private String noUpdateMessage() {
@@ -607,6 +606,10 @@ public class CheckForUpdateNotifier implements Interruptible {
 
     protected String bundledString(String key) {
         return Bundles.get(this.getClass(), key);
+    }
+
+    protected String bundledString(String key, Object... args) {
+        return Bundles.get(this.getClass(), key, args);
     }
 }
 

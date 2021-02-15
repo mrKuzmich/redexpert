@@ -32,30 +32,32 @@ import java.util.List;
  */
 public interface NamedObject extends Named, java.io.Serializable {
 
-    int INDEX = 0;
-    int PROCEDURE = 1;
-    int SEQUENCE = 2;
-    int SYNONYM = 3;
-    int TABLE = 4;
-    int TRIGGER = 5;
-    int SYSTEM_DATABASE_TRIGGER = 6;
-    int VIEW = 7;
-    int DOMAIN = 8;
-    int EXCEPTION = 9;
-    int UDF = 10;
-    int FUNCTION = 11;
-    int GLOBAL_TEMPORARY = 12;
-    int PACKAGE = 13;
-    int ROLE = 14;
-    int SYSTEM_FUNCTION = 15;
-    int SYSTEM_STRING_FUNCTIONS = 16;
-    int SYSTEM_NUMERIC_FUNCTIONS = 17;
-    int SYSTEM_DATE_TIME_FUNCTIONS = 18;
-    int SYSTEM_VIEW = 19;
-    int SYSTEM_TABLE = 20;
-    int SYSTEM_DOMAIN = 21;
-    int SYSTEM_INDEX = 22;
-    int SYSTEM_TRIGGER = 23;
+    int DOMAIN = 0;
+    int TABLE = DOMAIN + 1;
+    int GLOBAL_TEMPORARY = TABLE + 1;
+    int VIEW = GLOBAL_TEMPORARY + 1;
+    int PROCEDURE = VIEW + 1;
+    int FUNCTION = PROCEDURE + 1;
+    int PACKAGE = FUNCTION + 1;
+    int TRIGGER = PACKAGE + 1;
+    int DDL_TRIGGER = TRIGGER + 1;
+    int DATABASE_TRIGGER = DDL_TRIGGER + 1;
+    int SEQUENCE = DATABASE_TRIGGER + 1;
+    int EXCEPTION = SEQUENCE + 1;
+    int UDF = EXCEPTION + 1;
+    int ROLE = UDF + 1;
+    int INDEX = ROLE + 1;
+    int SYSTEM_DOMAIN = INDEX + 1;
+    int SYSTEM_TABLE = SYSTEM_DOMAIN + 1;
+    int SYSTEM_VIEW = SYSTEM_TABLE + 1;
+    int SYSTEM_FUNCTION = SYSTEM_VIEW + 1;
+    int SYSTEM_STRING_FUNCTIONS = SYSTEM_FUNCTION + 1;
+    int SYSTEM_NUMERIC_FUNCTIONS = SYSTEM_STRING_FUNCTIONS + 1;
+    int SYSTEM_DATE_TIME_FUNCTIONS = SYSTEM_NUMERIC_FUNCTIONS + 1;
+    int SYSTEM_TRIGGER = SYSTEM_DATE_TIME_FUNCTIONS + 1;
+    int SYSTEM_ROLE = SYSTEM_TRIGGER + 1;
+    int SYSTEM_INDEX = SYSTEM_ROLE + 1;
+    int SYNONYM = SYSTEM_INDEX + 1;
 
     int META_TAG = 93;
     int TABLE_COLUMN = 94;
@@ -78,56 +80,60 @@ public interface NamedObject extends Named, java.io.Serializable {
     int CHECK_KEY = 995;
 
     String[] META_TYPES = {
-            "INDEX",
-            "PROCEDURE",
-            "SEQUENCE",
-            "SYNONYM",
-            "TABLE",
-            "TRIGGER",
-            "DATABASE TRIGGER",
-            "VIEW",
             "DOMAIN",
+            "TABLE",
+            "GLOBAL TEMPORARY",
+            "VIEW",
+            "PROCEDURE",
+            "FUNCTION",
+            "PACKAGE",
+            "TRIGGER",
+            "DDL TRIGGER",
+            "DATABASE TRIGGER",
+            "SEQUENCE",
             "EXCEPTION",
             "EXTERNAL FUNCTION",
-            "FUNCTION",
-            "GLOBAL TEMPORARY",
-            "PACKAGE",
             "ROLE",
+            "INDEX",
+            "SYSTEM DOMAIN",
+            "SYSTEM TABLE",
+            "SYSTEM VIEW",
             "SYSTEM FUNCTIONS",
             "SYSTEM_STRING_FUNCTIONS",
             "SYSTEM_NUMERIC_FUNCTIONS",
             "SYSTEM_DATE_TIME_FUNCTIONS",
-            "SYSTEM VIEW",
-            "SYSTEM TABLE",
-            "SYSTEM DOMAIN",
+            "SYSTEM TRIGGER",
+            "SYSTEM ROLE",
             "SYSTEM INDEX",
-            "SYSTEM TRIGGER"
+            "SYNONYM",
     };
     String[] META_TYPES_FOR_BUNDLE = {
-            "INDEX",
-            "PROCEDURE",
-            "SEQUENCE",
-            "SYNONYM",
-            "TABLE",
-            "TRIGGER",
-            "DATABASE_TRIGGER",
-            "VIEW",
             "DOMAIN",
+            "TABLE",
+            "GLOBAL_TEMPORARY",
+            "VIEW",
+            "PROCEDURE",
+            "FUNCTION",
+            "PACKAGE",
+            "TRIGGER",
+            "DDL_TRIGGER",
+            "DATABASE_TRIGGER",
+            "SEQUENCE",
             "EXCEPTION",
             "EXTERNAL_FUNCTION",
-            "FUNCTION",
-            "GLOBAL_TEMPORARY",
-            "PACKAGE",
             "ROLE",
+            "INDEX",
+            "SYSTEM_DOMAIN",
+            "SYSTEM_TABLE",
+            "SYSTEM_VIEW",
             "SYSTEM_FUNCTIONS",
             "SYSTEM_STRING_FUNCTIONS",
             "SYSTEM_NUMERIC_FUNCTIONS",
             "SYSTEM_DATE_TIME_FUNCTIONS",
-            "SYSTEM_VIEW",
-            "SYSTEM_TABLE",
-            "SYSTEM_DOMAIN",
+            "SYSTEM_TRIGGER",
+            "SYSTEM_ROLE",
             "SYSTEM_INDEX",
-            "SYSTEM_TRIGGER"
+            "SYNONYM",
     };
 
     /**

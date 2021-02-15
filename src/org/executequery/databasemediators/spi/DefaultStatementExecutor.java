@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
  */
 public class DefaultStatementExecutor implements StatementExecutor, Serializable {
 
+
     /**
      * Whether this object is owned by a QueryEditor instance
      */
@@ -114,6 +115,8 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
      */
     private int transactionIsolation;
 
+    boolean useDatabaseConnection;
+
     public DefaultStatementExecutor() {
         this(null, false);
     }
@@ -145,6 +148,7 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
         maxUseCount = ConnectionManager.getMaxUseCount();
         statementResult = new SqlStatementResult();
         transactionIsolation = -1;
+        setUseDatabaseConnection(true);
     }
 
     /**
@@ -268,7 +272,7 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
 
     private boolean prepared() throws SQLException {
 
-        if (databaseConnection == null || !databaseConnection.isConnected()) {
+        if (isUseDatabaseConnection() && (databaseConnection == null || !databaseConnection.isConnected())) {
 
             statementResult.setMessage("Not Connected");
             statementResult.setOtherException(new UndeclaredThrowableException(new Throwable(), "Not Connected"));
@@ -280,7 +284,9 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
 
             try {
 
-                conn = ConnectionManager.getConnection(databaseConnection);
+                if (isUseDatabaseConnection())
+                    conn = ConnectionManager.getTemporaryConnection(databaseConnection);
+                else throw new DataSourceException("Connection=null or closed");
                 if (keepAlive) {
 
                     try {
@@ -1059,6 +1065,8 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
         return execute(type, statement, -1);
     }
 
+    boolean autoddl = true;
+
     @Override
     public SqlStatementResult execute(int type, String query, int fetchSize) throws SQLException {
 
@@ -1072,6 +1080,7 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
             case QueryTypes.INSERT:
             case QueryTypes.UPDATE:
             case QueryTypes.DELETE:
+                return updateRecords(query);
             case QueryTypes.DROP_TABLE:
             case QueryTypes.CREATE_TABLE:
             case QueryTypes.ALTER_TABLE:
@@ -1085,7 +1094,11 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
             case QueryTypes.DROP_OBJECT:
             case QueryTypes.COMMENT:
             case QueryTypes.CREATE_TRIGGER:
-                return updateRecords(query);
+            case QueryTypes.CREATE_OBJECT:
+            case QueryTypes.RECREATE_OBJECT:
+            case QueryTypes.CREATE_OR_ALTER:
+            case QueryTypes.ALTER_OBJECT:
+                return executeDDL(query);
 
             case QueryTypes.UNKNOWN:
             case QueryTypes.SELECT_INTO:
@@ -1107,57 +1120,10 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
 
             case QueryTypes.SHOW_TABLES:
                 return showTables();
-
-            /*
-            case CONNECT:
-                return establishConnection(query.toUpperCase());
-             */
-        }
-        return statementResult;
-    }
-
-    @Override
-    public SqlStatementResult execute(int type, PreparedStatement statement, int fetchSize) throws SQLException {
-        statementResult.setType(type);
-
-        switch (type) {
-
-            case QueryTypes.SELECT:
-            case QueryTypes.EXPLAIN:
-                return getResultSet(fetchSize, statement);
-            case QueryTypes.INSERT:
-            case QueryTypes.UPDATE:
-            case QueryTypes.DELETE:
-            case QueryTypes.DROP_TABLE:
-            case QueryTypes.CREATE_TABLE:
-            case QueryTypes.ALTER_TABLE:
-            case QueryTypes.CREATE_SEQUENCE:
-            case QueryTypes.CREATE_FUNCTION:
-            case QueryTypes.CREATE_PROCEDURE:
-            case QueryTypes.GRANT:
-            case QueryTypes.CREATE_SYNONYM:
-            case QueryTypes.CREATE_ROLE:
-            case QueryTypes.REVOKE:
-            case QueryTypes.DROP_OBJECT:
-            case QueryTypes.COMMENT:
-            case QueryTypes.CREATE_TRIGGER:
-                return updateRecords(statement);
-
-            case QueryTypes.UNKNOWN:
-            case QueryTypes.SELECT_INTO:
-            case QueryTypes.EXECUTE:
-            case QueryTypes.CALL:
-                return execute(statement);
-
-            case QueryTypes.COMMIT:
-                return commitLast(true);
-
-            case QueryTypes.ROLLBACK:
-                return commitLast(false);
-
-            case QueryTypes.SHOW_TABLES:
-                return showTables();
-
+            case QueryTypes.SET_AUTODDL_ON:
+                return setAutoDDL(true);
+            case QueryTypes.SET_AUTODDL_OFF:
+                return setAutoDDL(false);
             /*
             case CONNECT:
                 return establishConnection(query.toUpperCase());
@@ -1438,6 +1404,68 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
     }
 
     @Override
+    public SqlStatementResult execute(int type, PreparedStatement statement, int fetchSize) throws SQLException {
+        statementResult.reset();
+        statementResult.setType(type);
+
+        switch (type) {
+
+            case QueryTypes.SELECT:
+            case QueryTypes.EXPLAIN:
+                return getResultSet(fetchSize, statement);
+            case QueryTypes.INSERT:
+            case QueryTypes.UPDATE:
+            case QueryTypes.DELETE:
+                return updateRecords(statement);
+            case QueryTypes.DROP_TABLE:
+            case QueryTypes.CREATE_TABLE:
+            case QueryTypes.ALTER_TABLE:
+            case QueryTypes.CREATE_SEQUENCE:
+            case QueryTypes.CREATE_FUNCTION:
+            case QueryTypes.CREATE_PROCEDURE:
+            case QueryTypes.GRANT:
+            case QueryTypes.CREATE_SYNONYM:
+            case QueryTypes.CREATE_ROLE:
+            case QueryTypes.REVOKE:
+            case QueryTypes.DROP_OBJECT:
+            case QueryTypes.COMMENT:
+            case QueryTypes.CREATE_TRIGGER:
+            case QueryTypes.CREATE_OBJECT:
+            case QueryTypes.RECREATE_OBJECT:
+            case QueryTypes.CREATE_OR_ALTER:
+            case QueryTypes.ALTER_OBJECT:
+                return executeDDL(statement);
+
+            case QueryTypes.UNKNOWN:
+            case QueryTypes.SELECT_INTO:
+            case QueryTypes.EXECUTE:
+            case QueryTypes.CALL:
+                return execute(statement);
+
+            case QueryTypes.COMMIT:
+                return commitLast(true);
+
+            case QueryTypes.ROLLBACK:
+                return commitLast(false);
+
+            case QueryTypes.SET_AUTODDL_ON:
+                return setAutoDDL(true);
+            case QueryTypes.SET_AUTODDL_OFF:
+                return setAutoDDL(false);
+
+            case QueryTypes.SHOW_TABLES:
+                return showTables();
+
+
+            /*
+            case CONNECT:
+                return establishConnection(query.toUpperCase());
+             */
+        }
+        return statementResult;
+    }
+
+    @Override
     public SqlStatementResult updateRecords(PreparedStatement statement) throws SQLException {
         stmnt = statement;
         if (statement == null || statement.isClosed()) {
@@ -1452,10 +1480,32 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
         } catch (SQLException e) {
             statementResult.setSqlException(e);
         } finally {
+            //finished();
+        }
+
+        return statementResult;
+    }
+
+    public SqlStatementResult executeDDL(String query) throws SQLException {
+
+        if (!prepared()) {
+            return statementResult;
+        }
+
+        stmnt = conn.createStatement();
+
+        try {
+            int result = stmnt.executeUpdate(query);
+            statementResult.setUpdateCount(result);
+            useCount++;
+        } catch (SQLException e) {
+            statementResult.setSqlException(e);
+        } finally {
             finished();
         }
 
         return statementResult;
+
     }
 
     /*
@@ -1501,15 +1551,67 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
                         conn.commit();
                         Log.info("Commit complete.");
                         statementResult.setMessage("Commit complete.");
-                        closeMaxedConn();
+                        //closeMaxedConn();
 
                     } else {
 
                         conn.rollback();
                         Log.info("Rollback complete.");
                         statementResult.setMessage("Rollback complete.");
-                        closeMaxedConn();
+                        //closeMaxedConn();
                     }
+
+                } else {
+
+                    statementResult.setSqlException(new SQLException("Connection is closed"));
+                }
+
+            } catch (SQLException e) {
+                handleException(e);
+                statementResult.setSqlException(e);
+            }
+        return statementResult;
+
+    }
+
+    public SqlStatementResult executeDDL(PreparedStatement statement) throws SQLException {
+        stmnt = statement;
+        if (statement == null || statement.isClosed()) {
+            statementResult.setMessage("Statement closed");
+            return statementResult;
+        }
+
+        try {
+            int result = statement.executeUpdate();
+            statementResult.setUpdateCount(result);
+            useCount++;
+        } catch (SQLException e) {
+            statementResult.setSqlException(e);
+        } finally {
+            if (isAutoDDL())
+                commitLast(true);
+        }
+
+        return statementResult;
+    }
+
+    public boolean isAutoDDL() {
+        return autoddl;
+    }
+
+    private SqlStatementResult setAutoDDL(boolean autocommit) {
+
+        statementResult.reset();
+        statementResult.setUpdateCount(0);
+        if (conn != null)
+            try {
+
+                if (!conn.isClosed()) {
+
+
+                    autoddl = autocommit;
+                    Log.info("Set autoddl " + autocommit);
+                    statementResult.setMessage("Set autoddl " + autocommit);
 
                 } else {
 
@@ -1702,7 +1804,7 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
             stmnt = null;
             if (conn != null) {
 
-                if (!keepAlive) {
+                if (useDatabaseConnection) {
 
                     conn.close();
 
@@ -1775,6 +1877,30 @@ public class DefaultStatementExecutor implements StatementExecutor, Serializable
         stmnt = conn.prepareCall(query);
 
         return (CallableStatement) stmnt;
+    }
+
+    public boolean isKeepAlive() {
+        return keepAlive;
+    }
+
+    public void setKeepAlive(boolean keepAlive) {
+        this.keepAlive = keepAlive;
+    }
+
+    public boolean isUseDatabaseConnection() {
+        return useDatabaseConnection;
+    }
+
+    public void setUseDatabaseConnection(boolean useDatabaseConnection) {
+        this.useDatabaseConnection = useDatabaseConnection;
+    }
+
+    public Connection getConn() {
+        return conn;
+    }
+
+    public void setConn(Connection conn) {
+        this.conn = conn;
     }
 }
 
